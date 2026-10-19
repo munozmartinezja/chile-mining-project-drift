@@ -1,0 +1,10 @@
+data/raw/
+data/interim/
+data/powerbi/
+*.parquet
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.DS_Store/
+.claude/
