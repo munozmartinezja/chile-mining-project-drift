@@ -1,0 +1,84 @@
+edicion,proyecto_raw,decision,destino_edicion,destino_proyecto_raw,nota
+2015,Ampliación Marginal los,mismo,2014,Ampliación Marginal Los Pelambres,
+2015,Cerro Colorado Cont.,mismo,2014,Cerro Colorado Continuidad Operacional,
+2015,Otros proyectos de desarrollo,mismo,2014,Otros de desarrollo,
+2015,Sierra Gorda Expansión 220 ktpd,distinto,2014,Sierra Gorda,expansión distinta de la operación original
+2016,Otros proyectos de Codelco3,mismo,2015,Otros proyectos de desarrollo,
+2017,Ampliación Molynor,mismo,2016,Proyecto de Ampliación Molynor,
+2018,NUEVAUNION FASE II y III,nuevo,2017,NuevaUnión,fase separada; capex distinto al de NuevaUnión 2017
+2018,NUEVAUNIÓN FASE I,mismo,2017,NuevaUnión,continuidad de NuevaUnión 2017; mismo capex (3.500)
+2018,PLANTA DIS. Y REF.PEDRO DE VALDIVIA,mismo,2017,Planta Pedro de Valdivia,
+2019,CONT. OPERACIONAL ZALDÍVAR,mismo,2018,CONTINUIDAD OPERACIONAL ZALDÍVAR,
+2021,ARQUEROS,mismo,2020,ARQUEROS COBRE,
+2021,LA COIPA REAPERTURA (Ex FASE 7),mismo,2020,LA COIPA FASE 7,
+2024,Nuevas Fases Chuquicamata Subterránea,mismo,2018,CHUQUICAMATA SUBTERRÁNEA,
+2025,Collahuasi 210 KTPD - Proyecto C20+,mismo,2024,Collahuasi 210 KTPD,
+2025,Continuidad Operacional Mina Barreal Seco,mismo,2024,Mina Barreal Seco,
+2025,Extensión vida Concentrado Los Colorados,mismo,2017,Extensión Los Colorados,
+2025,Fenix Gold,mismo,2024,Desarrollo Fenix Gold,
+2025,Proyecto El Espino,mismo,2024,El Espino,
+2025,Proyecto Minero Arqueros Cobre,mismo,2024,Arqueros Cobre,
+2025,Proyecto Minero Tovaku,mismo,2014,Tovaku,
+2018,CONTINUIDAD OPERACIONAL ZALDÍVAR,nuevo,,,proyecto propio de Zaldívar
+2019,CONT. OPERACIONAL EL PEÑÓN,distinto,2016,Cerro Colorado Cont. Operacional,
+2023,Actualización del Depósito de Relaves e Instalaciones Anexas,distinto,2018,EL ABRA MILL PROJECT (e),
+2023,Adecuación Obras Mineras para Continuidad Operacional de CMLB,mismo,2021,LOMAS BAYAS 2034,informe 2024: ex LOMAS BAYAS 2034; mismo capex
+2023,Continuidad Operacional La Farola,nuevo,,,sin antecedente en ediciones previas
+2023,Continuidad Operacional Teck CDA,nuevo,,,sin antecedente en ediciones previas
+2023,Desarrollo Minera Centinela (Segunda Concentradora - Fase 1),mismo,2021,DES. DISTRITO CENTINELA,rediseño del Distrito Centinela en segunda concentradora
+2023,Desarrollo Minera Centinela (Segunda Concentradora - Fase 2),nuevo,,,fase 2 separada
+2023,Extensión del Botadero de Ripios y Modificaciones Operacionales en el Área de la Pila Dinámica de Lixiviación,distinto,2016,Modificaciones El Tesoro,
+2023,Optimización y Continuidad Operacional Minera Candelaria,mismo,2021,CONT. OP. MINERA CANDELARIA,mismo operador y capex (600)
+2023,Plan de Desarrollo Michilla,distinto,2014,Otros de desarrollo,
+2024,Modificación Proyecto Mina Los Colorados: Ajustes y Continuidad Operacional,nuevo,,,sin antecedente en ediciones previas
+2024,Proyecto de Desarrollo Minero de Extracción de Arcillas para Producción de Concentrado de Tierras Raras,nuevo,,,sin antecedente en ediciones previas
+2025,Chuquicamata Subterránea (1),distinto,2023,Proyecto expansión vida útil FASE 1,
+2025,Continuidad Operacional y Modificación del Proyecto Minero Sagasca,nuevo,,,operador distinto de Zaldívar
+2025,Desarrollo Minera Centinela - 2° Concentradora Fase I y II,mismo,2024,Segunda Concentradora - Fase 1,capex 4.350 igual al Distrito Centinela original
+2025,Proyecto Minero de Cobre Óxidos Marimaca,distinto,2023,Proyecto Minero Arqueros,
+2025,Proyecto de Adaptación Operacional (PAO),mismo,2024,Pelambres futuro o Fase II y III,"mismo nombre (Adaptación Operacional), operador y región"
+2015,Actualización Quebrada Blanca,distinto,2014,Quebrada Blanca Hipógeno,
+2016,Ampliación Mgl. Los Pelambres Fase I,mismo,2015,Ampliación Marginal los,informe 2023: Fase I = ex Ampliación Marginal Los Pelambres
+2016,Ampliación Mgl. Los Pelambres Fase II,distinto,2014,Ampliación Marginal Los Pelambres,
+2017,Proyectos FURE,nuevo,2016,Otros proyectos de Codelco3,"El Proyecto FURE (Fundición y Refinería) forma parte de la Estrategia Nacional para el Fortalecimiento de la Capacidad de Fundición y Refinería impulsada por el Gobierno de Chile para aumentar el procesamiento local de concentrados de cobre, reducir la exportación de mineral en bruto y agregar valor a la minería."
+2018,PRODUCCIÓN DE SALES MARICUNGA,distinto,2017,Cerro Maricunga,
+2019,CONC. EL ABRA (Ex EL ABRA MILL),mismo,2018,EL ABRA MILL PROJECT (e),
+2019,LOS BRONCES INTEGRADO,distinto,2017,Los Bronces - Fase 7,
+2020,CONT. OP. MINERA CANDELARIA,distinto,2018,CANDELARIA 2030,
+2021,LOMAS BAYAS 2034,distinto,2014,Lomas Bayas III Sulfuros,
+2023,Desarrollo Santo Domingo,mismo,2021,SANTO DOMINGO,mismo operador (Santo Domingo SCM / Capstone) y región
+2023,Desarrollo de Infraestructura y Mejoramiento de Capacidad Productiva de Collahuasi (Collahuasi 210 KTPD),mismo,2021,COLLAHUASI MEJ. CAP. PROD. 210 KTPD,
+2023,Diego de Almagro (Sierra Norte),mismo,2021,DIEGO DE ALMAGRO,
+2023,Estudio de Impacto Ambiental Proyecto Salares Norte,mismo,2021,SALARES NORTE,
+2023,Fénix Gold,mismo,2021,FENIX GOLD (Ex CERRO MARICUNGA),
+2023,Nueva Paipote (Fundición Hernán Videla Lira),mismo,2021,NUEVA PAIPOTE,
+2023,Nueva esperanza,mismo,2021,NUEVA ESPERANZA - ARQUEROS,
+2023,Proyecto Desarrollo Mantoverde (PDMV),mismo,2021,DESARROLLO MANTOVERDE,
+2023,Proyecto El Espino,mismo,2021,EL ESPINO,
+2023,Proyecto Los Bronces Integrado,mismo,2021,LOS BRONCES INTEGRADO,
+2023,Proyecto Minero Arqueros,mismo,2021,ARQUEROS,
+2023,Proyecto Minero Portuario Dominga,mismo,2021,DOMINGA,
+2023,Proyecto Playa Verde,mismo,2021,PLAYA VERDE,
+2023,Proyecto Polo Sur y Optimización Minera Centinela,mismo,2021,POLO SUR,
+2023,Proyecto de Adaptación Operacional (Pelambres futuro o Fase II y III),mismo,2021,I3 PELAMBRES FUTURO,
+2024,Continuidad Operacional Minera El Abra,nuevo,,,sin antecedente en ediciones previas
+2024,Desarrollo Fenix Gold,mismo,2023,Fénix Gold,
+2024,Desarrollo Mantoverde Fase II,mismo,2023,Mantoverde Fase II,
+2024,Expansión El Abra,mismo,2021,CONC. EL ABRA (Ex EL ABRA MILL),expansión de la concentradora (ex El Abra Mill)
+2024,Extensión Vida Útil Proyecto María Elena,distinto,2023,Proyecto expansión vida útil FASE 1,
+2024,"Pelambres futuro, expansión vida útil",nuevo,2021,I3 PELAMBRES FUTURO,capex 2.000 no calza con Pelambres Futuro (1.000); continúa como EVU en 2025
+2024,Proyecto Modificación instalaciones de Los Bronces: Remoción Tranque Pérez Caldera y adaptación del Recurso Hídrico,distinto,2017,Los Bronces - Fase 7,
+2024,Proyecto Paloma (ex blanco) fase I,mismo,2023,Proyecto Blanco,renombrado: Paloma (ex Blanco)
+2024,Proyecto Paloma (ex blanco) fase II,nuevo,2023,Proyecto Blanco,fase separada de Paloma (ex Blanco)
+2024,Proyecto Rajo Inca (PRI),mismo,2023,Rajo Inca,
+2025,Aplicación de ripios de lixiviación de BHP en Escondida,distinto,2015,Escondida OGP I,
+2025,Demolición Concentradora Los Colorados,distinto,2017,Extensión Los Colorados,
+2025,Laguna Seca expansion,distinto,2024,Expansión El Abra,
+2025,Nueva concentradora: Los Colorados,distinto,2017,Extensión Los Colorados,
+2025,Proyecto Salar de Maricunga,nuevo,,,distinto de Sales Maricunga y de Fénix Gold
+2025,Reapertura Cerro Colorado,distinto,2017,Cerro Colorado Cont.Oper.,"reapertura posterior al cierre: proyecto nuevo, no continuidad"
+2025,Tente en el Aire,mismo,2024,Nueva Victoria Planta Yoduro,"mismo operador, región, capex (350) y año"
+2025,Extensión de Vida Útil de Minera Los Pelambres (EVU),mismo,2024,"Pelambres futuro, expansión vida útil",mismo capex (2.000) y año (2030); renombrado
+2016,Cerro Colorado Cont. Operacional,mismo,2015,Cerro Colorado Cont.,mismo capex (467) y año
+2024,Santo Domingo,mismo,2023,Desarrollo Santo Domingo,continuidad
+2025,Santo Domingo,mismo,2024,Santo Domingo,continuidad
