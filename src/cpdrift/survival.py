@@ -11,6 +11,14 @@ DATA_EDITIONS = [*range(2014, 2022), 2023, 2024, 2025]
 HORIZONS = (2, 4, 6)
 BOOTSTRAP_REPLICATES = 1_000
 BOOTSTRAP_SEED = 20261021
+BOOTSTRAP_GROUPS = (
+    ("incidente", "TOTAL"),
+    ("incidente", "BASE_PROBABLE"),
+    ("incidente", "POSIBLE_POTENCIAL"),
+    ("total", "TOTAL"),
+    ("total", "BASE_PROBABLE"),
+    ("total", "POSIBLE_POTENCIAL"),
+)
 CIF_COLUMNS = [
     "cohorte",
     "grupo",
@@ -155,44 +163,45 @@ def build_cif_table(
     bootstrap_replicates: int = BOOTSTRAP_REPLICATES,
     seed: int = BOOTSTRAP_SEED,
 ) -> pd.DataFrame:
-    """Estimate CIF curves for the main and sensitivity cohorts."""
-    endpoints = prepare_survival_endpoints(projects)
+    """Estimate CIF curves with one fixed random stream per cohort and group.
+
+    Groups follow ``BOOTSTRAP_GROUPS``. Stream ``k`` uses a seed sequence
+    ``[seed, k]``; endpoints are ordered by project ID before resampling.
+    """
+    endpoints = prepare_survival_endpoints(projects).sort_values(
+        "project_id", kind="stable"
+    ).reset_index(drop=True)
     cohort_frames = {
         "incidente": endpoints.loc[endpoints["primera_edicion"].ge(2015)],
         "total": endpoints,
     }
     outputs: list[pd.DataFrame] = []
-    rng = np.random.default_rng(seed)
-    for cohort_name, cohort in cohort_frames.items():
-        groups = {
-            "TOTAL": cohort,
-            "BASE_PROBABLE": cohort.loc[
-                cohort["grupo_condicion"].eq("BASE_PROBABLE")
-            ],
-            "POSIBLE_POTENCIAL": cohort.loc[
-                cohort["grupo_condicion"].eq("POSIBLE_POTENCIAL")
-            ],
-        }
-        for group_name, group in groups.items():
-            if group.empty:
-                continue
-            curve = estimate_cif(group, HORIZONS)
-            curve.insert(0, "grupo", group_name)
-            curve.insert(0, "cohorte", cohort_name)
-            intervals = _bootstrap_intervals(
-                group,
-                bootstrap_replicates,
-                rng,
-            )
-            for column in ("ic_op_inf", "ic_op_sup", "ic_sal_inf", "ic_sal_sup"):
-                curve[column] = np.nan
-            for time, values in intervals.items():
-                mask = curve["t"].eq(time)
-                curve.loc[mask, "ic_op_inf"] = values[0]
-                curve.loc[mask, "ic_op_sup"] = values[1]
-                curve.loc[mask, "ic_sal_inf"] = values[2]
-                curve.loc[mask, "ic_sal_sup"] = values[3]
-            outputs.append(curve)
+    for stream_index, (cohort_name, group_name) in enumerate(BOOTSTRAP_GROUPS):
+        cohort = cohort_frames[cohort_name]
+        group = (
+            cohort
+            if group_name == "TOTAL"
+            else cohort.loc[cohort["grupo_condicion"].eq(group_name)]
+        )
+        if group.empty:
+            continue
+        curve = estimate_cif(group, HORIZONS)
+        curve.insert(0, "grupo", group_name)
+        curve.insert(0, "cohorte", cohort_name)
+        intervals = _bootstrap_intervals(
+            group,
+            bootstrap_replicates,
+            np.random.default_rng([seed, stream_index]),
+        )
+        for column in ("ic_op_inf", "ic_op_sup", "ic_sal_inf", "ic_sal_sup"):
+            curve[column] = np.nan
+        for time, values in intervals.items():
+            mask = curve["t"].eq(time)
+            curve.loc[mask, "ic_op_inf"] = values[0]
+            curve.loc[mask, "ic_op_sup"] = values[1]
+            curve.loc[mask, "ic_sal_inf"] = values[2]
+            curve.loc[mask, "ic_sal_sup"] = values[3]
+        outputs.append(curve)
     if not outputs:
         return pd.DataFrame(columns=CIF_COLUMNS)
     return pd.concat(outputs, ignore_index=True)[CIF_COLUMNS]

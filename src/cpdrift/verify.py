@@ -24,8 +24,13 @@ COUNT_IDS = {
     "n_pares_conciliados",
     "n_cohorte_incidente",
     "ols_n",
-    "n_train",
-    "n_test",
+    "n_train_corte_unico",
+    "n_test_corte_unico",
+    "n_cortes",
+    "n_test_agregado",
+    "n_ediciones",
+    "min_proyectos_edicion",
+    "max_proyectos_edicion",
     "n_escenarios_regresion",
     "n_escenarios_potencial_robusto",
 }
@@ -184,6 +189,32 @@ def _cif_at(
         exits += survival * d_exit / at_risk
         survival *= 1 - (d_operation + d_exit) / at_risk
     return operation, exits
+
+
+def _bootstrap_cif(
+    endpoints: list[dict[str, object]], stream_index: int
+) -> dict[str, float]:
+    ordered = sorted(endpoints, key=lambda row: str(row["project_id"]))
+    rng = np.random.default_rng([20261021, stream_index])
+    values = {key: [] for key in ("op_4", "sal_4", "op_6", "sal_6")}
+    for _ in range(1_000):
+        positions = rng.integers(0, len(ordered), size=len(ordered))
+        sample = [ordered[int(position)] for position in positions]
+        for horizon in (4, 6):
+            operation, exits = _cif_at(sample, horizon)
+            values[f"op_{horizon}"].append(float(operation))
+            values[f"sal_{horizon}"].append(float(exits))
+    output = {}
+    for event in ("op", "sal"):
+        for horizon in (4, 6):
+            sample_values = values[f"{event}_{horizon}"]
+            output[f"ic_{event}_inf_{horizon}"] = float(
+                np.percentile(sample_values, 2.5)
+            )
+            output[f"ic_{event}_sup_{horizon}"] = float(
+                np.percentile(sample_values, 97.5)
+            )
+    return output
 
 
 def _verify_prices(
@@ -492,6 +523,7 @@ def _recalculate(
             condition_group = None
         endpoints.append(
             {
+                "project_id": project_id,
                 "first": first_edition,
                 "t": duration,
                 "evento": event,
@@ -507,6 +539,10 @@ def _recalculate(
     possible_cif = _cif_at_six(possible_potential)
     base_cif_four = _cif_at(base_probable, 4)
     possible_cif_four = _cif_at(possible_potential, 4)
+    base_intervals = _bootstrap_cif(base_probable, 1) if base_probable else {}
+    possible_intervals = (
+        _bootstrap_cif(possible_potential, 2) if possible_potential else {}
+    )
     ols_values = recalculate_ols(pd.DataFrame(transition_rows))
 
     threshold = panel.loc[
@@ -579,8 +615,53 @@ def _recalculate(
         "cif_sal_4_base_probable": base_cif_four[1],
         "cif_op_4_posible_potencial": possible_cif_four[0],
         "cif_sal_4_posible_potencial": possible_cif_four[1],
+        **{
+            f"{claim_id}_base_probable": value
+            for claim_id, value in base_intervals.items()
+        },
+        **{
+            f"{claim_id}_posible_potencial": value
+            for claim_id, value in possible_intervals.items()
+        },
         **ols_values,
     }
+    valid_deltas = [value for value in deltas if value is not None]
+    for condition in ("BASE", "PROBABLE", "POSIBLE", "POTENCIAL"):
+        condition_deltas = [
+            float(row["delta_pem"])
+            for row in transition_rows
+            if row["condicion_prev"] == condition and row["delta_pem"] is not None
+        ]
+        result[f"pct_atraso_{condition.lower()}"] = _percent(
+            sum(value > 0 for value in condition_deltas), len(condition_deltas)
+        )
+    initial_capex = [
+        float(first["capex_real_2025"])
+        for first, _ in project_histories.values()
+        if pd.notna(first["capex_real_2025"])
+    ]
+    copper_sectors = {"GRAN_MINERIA_CU", "ESTATAL_CU", "MEDIANA_MINERIA_CU"}
+    first_rows = [first for first, _ in project_histories.values()]
+    edition_counts = panel.groupby("edicion")["project_id"].nunique()
+    result.update(
+        {
+            "pct_transiciones_sin_cambio": _percent(
+                sum(value == 0 for value in valid_deltas), len(valid_deltas)
+            ),
+            "mediana_capex_inicial_real": _median(initial_capex),
+            "pct_proyectos_cobre": _percent(
+                sum(row["sector"] in copper_sectors for row in first_rows),
+                len(first_rows),
+            ),
+            "pct_proyectos_antofagasta": _percent(
+                sum(str(row["region"]).upper() == "ANTOFAGASTA" for row in first_rows),
+                len(first_rows),
+            ),
+            "n_ediciones": int(panel["edicion"].nunique()),
+            "min_proyectos_edicion": int(edition_counts.min()),
+            "max_proyectos_edicion": int(edition_counts.max()),
+        }
+    )
     if egresos_path is not None:
         outcome_counts = {
             "entro_en_operacion": 0,
@@ -671,21 +752,121 @@ def _recalculate(
         complete_probability = prediction_map["completo"]
         result.update(
             {
-                "auc_test_completo": _verify_auc(observed, complete_probability),
-                "auc_test_solo_condicion": _verify_auc(
+                "auc_corte_unico_completo": _verify_auc(observed, complete_probability),
+                "auc_corte_unico_solo_condicion": _verify_auc(
                     observed, prediction_map["solo_condicion"]
                 ),
-                "brier_test_completo": float(
+                "brier_corte_unico_completo": float(
                     ((observed - complete_probability) ** 2).mean()
                 ),
-                "brier_test_prevalencia": float(
+                "brier_corte_unico_prevalencia": float(
                     ((observed - prevalence) ** 2).mean()
                 ),
-                "calibracion_test_completo": float(
+                "calibracion_corte_unico_completo": float(
                     complete_probability.mean() - observed.mean()
                 ),
-                "n_train": len(train),
-                "n_test": len(test),
+                "n_train_corte_unico": len(train),
+                "n_test_corte_unico": len(test),
+            }
+        )
+        cut_rows: list[dict[str, object]] = []
+        cut_aucs: list[float] = []
+        for cut in (2018, 2019, 2020, 2021, 2023, 2024):
+            cut_train = data.loc[data["ed_prev"].lt(cut)]
+            cut_test = data.loc[data["ed_prev"].eq(cut)]
+            if cut_train.empty or cut_test.empty:
+                raise ValueError(f"corte {cut} requiere entrenamiento y prueba")
+            probabilities: dict[str, np.ndarray] = {}
+            for name, terms in {
+                "completo": VERIFY_TERMS,
+                "solo_condicion": 'C(condicion_prev, Treatment("BASE"))',
+            }.items():
+                y_cut, x_cut = dmatrices(
+                    f"atraso ~ {terms}", cut_train, return_type="dataframe"
+                )
+                x_future = build_design_matrices(
+                    [x_cut.design_info], cut_test, return_type="dataframe"
+                )[0]
+                beta = _verify_firth(
+                    x_cut.to_numpy(), y_cut.iloc[:, 0].to_numpy()
+                )
+                probabilities[name] = 1 / (
+                    1 + np.exp(-np.clip(x_future.to_numpy() @ beta, -35, 35))
+                )
+            cut_observed = cut_test["atraso"].astype(float).reset_index(drop=True)
+            cut_auc = _verify_auc(cut_observed, probabilities["completo"])
+            cut_aucs.append(cut_auc)
+            prevalence_probability = float(cut_train["atraso"].mean())
+            for position, (_, source_row) in enumerate(cut_test.iterrows()):
+                cut_rows.append(
+                    {
+                        "project_id": source_row["project_id"],
+                        "atraso": float(source_row["atraso"]),
+                        "p_completo": float(probabilities["completo"][position]),
+                        "p_solo_condicion": float(
+                            probabilities["solo_condicion"][position]
+                        ),
+                        "p_prevalencia": prevalence_probability,
+                    }
+                )
+        combined = pd.DataFrame(cut_rows)
+        aggregate_observed = combined["atraso"]
+        aggregate_auc = _verify_auc(aggregate_observed, combined["p_completo"].to_numpy())
+        aggregate_condition_auc = _verify_auc(
+            aggregate_observed, combined["p_solo_condicion"].to_numpy()
+        )
+        complete_brier = float(
+            ((aggregate_observed - combined["p_completo"]) ** 2).mean()
+        )
+        prevalence_brier = float(
+            ((aggregate_observed - combined["p_prevalencia"]) ** 2).mean()
+        )
+        rng = np.random.default_rng(20261022)
+        identifiers = sorted(combined["project_id"].unique(), key=str)
+        bootstrap_auc: list[float] = []
+        bootstrap_improvement: list[float] = []
+        for _ in range(1_000):
+            sampled_ids = rng.choice(identifiers, size=len(identifiers), replace=True)
+            sample = pd.concat(
+                [combined.loc[combined["project_id"].eq(item)] for item in sampled_ids],
+                ignore_index=True,
+            )
+            if sample["atraso"].nunique() < 2:
+                continue
+            sampled_observed = sample["atraso"]
+            bootstrap_auc.append(
+                _verify_auc(sampled_observed, sample["p_completo"].to_numpy())
+            )
+            bootstrap_improvement.append(
+                float(((sampled_observed - sample["p_prevalencia"]) ** 2).mean())
+                - float(((sampled_observed - sample["p_completo"]) ** 2).mean())
+            )
+        result.update(
+            {
+                "auc_agregado_completo": aggregate_auc,
+                "auc_agregado_completo_ic_inf": float(
+                    np.percentile(bootstrap_auc, 2.5)
+                ),
+                "auc_agregado_completo_ic_sup": float(
+                    np.percentile(bootstrap_auc, 97.5)
+                ),
+                "auc_agregado_solo_condicion": aggregate_condition_auc,
+                "brier_agregado_completo": complete_brier,
+                "brier_agregado_prevalencia": prevalence_brier,
+                "mejora_brier_agregada": prevalence_brier - complete_brier,
+                "mejora_brier_agregada_ic_inf": float(
+                    np.percentile(bootstrap_improvement, 2.5)
+                ),
+                "mejora_brier_agregada_ic_sup": float(
+                    np.percentile(bootstrap_improvement, 97.5)
+                ),
+                "calibracion_agregada_completo": float(
+                    combined["p_completo"].mean() - aggregate_observed.mean()
+                ),
+                "auc_corte_min": min(cut_aucs),
+                "auc_corte_max": max(cut_aucs),
+                "n_cortes": 6,
+                "n_test_agregado": len(combined),
             }
         )
         scenario_specs = {
