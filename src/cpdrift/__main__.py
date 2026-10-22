@@ -6,10 +6,12 @@ from pathlib import Path
 
 from .claims import build_claims_register
 from .conciliacion import (
+    build_date_rule_check,
     build_reconciliation,
     load_reconciliation_references,
     require_reconciled,
     verify_citations,
+    write_date_rule_check,
     write_reconciliation,
 )
 from .declared import extract_declared_all
@@ -18,9 +20,16 @@ from .indicators import build_indicator_tables, write_indicator_tables
 from .match import assign_project_ids
 from .normalize import impute_regions, normalize_projects
 from .panel import write_outputs
-from .regression import fit_regressions_from_parquet, write_regressions
+from .precios import build_copper_prices, write_copper_prices
+from .regression import (
+    fit_regressions_from_parquet,
+    prepare_extended_regression_data,
+    write_regressions,
+)
 from .report import build_report, write_report
+from .sensibilidad import build_sensitivity, write_sensitivity
 from .survival import build_cif_from_parquet, write_cif
+from .validacion import build_temporal_validation, write_temporal_validation
 from .verify import require_verified, verify_claims_register, write_claims_register
 
 RAW_DIR = Path("data/raw")
@@ -30,6 +39,7 @@ REVISION_PATH = INTERIM_DIR / "revision_cruce.csv"
 CORRECTIONS_PATH = Path("data/reference/correcciones_extraccion.csv")
 CPI_PATH = Path("data/reference/cpi_us_semestral.csv")
 REFERENCE_DIR = Path("data/reference")
+COPPER_PRICE_PATH = RAW_DIR / "cmo-precios-mensual.xlsx"
 
 
 def main() -> None:
@@ -78,8 +88,33 @@ def main() -> None:
     print("Estimando modelos asociativos…")
     cif = build_cif_from_parquet(INTERIM_DIR / "proyectos_deriva.parquet")
     write_cif(cif, INTERIM_DIR)
-    regressions = fit_regressions_from_parquet(INTERIM_DIR / "transiciones.parquet")
+    copper_prices = build_copper_prices(
+        COPPER_PRICE_PATH, CPI_PATH, set(panel_df["edicion"])
+    )
+    copper_prices_path = write_copper_prices(copper_prices, INTERIM_DIR)
+    regressions = fit_regressions_from_parquet(
+        INTERIM_DIR / "transiciones.parquet",
+        INTERIM_DIR / "panel.parquet",
+        copper_prices_path,
+    )
     write_regressions(regressions, INTERIM_DIR)
+
+    print("Evaluando robustez y validación temporal…")
+    extended_data = prepare_extended_regression_data(
+        indicators.transiciones, panel_df, copper_prices
+    )
+    validation = build_temporal_validation(extended_data)
+    write_temporal_validation(validation, INTERIM_DIR)
+    sensitivity_projects = indicators.proyectos_deriva.merge(
+        projects_df[["project_id", "fuente_desenlace"]],
+        on="project_id",
+        how="left",
+        validate="one_to_one",
+    )
+    sensitivity = build_sensitivity(extended_data, sensitivity_projects, panel_df)
+    write_sensitivity(sensitivity, INTERIM_DIR)
+    date_rule = build_date_rule_check(panel_df, outcome_references.egresos)
+    write_date_rule_check(date_rule, INTERIM_DIR)
 
     print("Verificando cifras…")
     claims = build_claims_register(
@@ -90,6 +125,10 @@ def main() -> None:
         projects=projects_df,
         egresos=outcome_references.egresos,
         conciliacion=outcome_reconciliation,
+        ols_ampliado=regressions.ols_ampliado,
+        validacion=validation.metricas,
+        sensibilidad=sensitivity,
+        regla_fecha=date_rule.detalle,
     )
     verified_claims = verify_claims_register(
         claims,
@@ -97,6 +136,7 @@ def main() -> None:
         INTERIM_DIR / "proyectos.parquet",
         CPI_PATH,
         REFERENCE_DIR / "egresos_declarados.csv",
+        COPPER_PRICE_PATH,
     )
     write_claims_register(verified_claims, INTERIM_DIR / "claims.json")
     require_verified(verified_claims)
@@ -112,8 +152,13 @@ def main() -> None:
             "cif": cif.to_dict("records"),
             "ols": regressions.ols.to_dict("records"),
             "logit": regressions.logit.to_dict("records"),
+            "ols_ampliado": regressions.ols_ampliado.to_dict("records"),
         },
         outcome_reconciliation=outcome_reconciliation.to_dict("records"),
+        robustness=sensitivity.to_dict("records"),
+        temporal_validation=validation.metricas.to_dict("records"),
+        calibration=validation.calibracion.to_dict("records"),
+        date_rule=date_rule.matriz.to_dict("records"),
     )
     md_path, json_path = write_report(report, INTERIM_DIR)
 

@@ -5,10 +5,12 @@ from __future__ import annotations
 import itertools
 import json
 import math
+import re
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from patsy import build_design_matrices, dmatrices
 
 COUNT_IDS = {
     "n_proyectos",
@@ -22,12 +24,21 @@ COUNT_IDS = {
     "n_pares_conciliados",
     "n_cohorte_incidente",
     "ols_n",
+    "n_train",
+    "n_test",
+    "n_escenarios_regresion",
+    "n_escenarios_potencial_robusto",
 }
 
 DATA_EDITIONS = [*range(2014, 2022), 2023, 2024, 2025]
 AGGREGATE_PREFIX = "OTROS"
 AGGREGATE_CONTAINS = "PROYECTOS DE INFORMACION"
 AGGREGATE_EXACT_NAMES = frozenset({"PROYECTOS FURE", "TRANQUES"})
+VERIFY_TERMS = (
+    'C(condicion_prev, Treatment("BASE"))'
+    ' + C(grupo_sector, Treatment("COBRE"))'
+    " + log_capex + horizonte + estatal + log_precio_cu"
+)
 
 
 def _aggregate_name(value: object) -> bool:
@@ -153,11 +164,188 @@ def _cif_at_six(
     return cif_operation, cif_exit
 
 
+def _cif_at(
+    endpoints: list[dict[str, object]], horizon: int
+) -> tuple[float | None, float | None]:
+    if not endpoints:
+        return None, None
+    survival = 1.0
+    operation = 0.0
+    exits = 0.0
+    for time in sorted({int(row["t"]) for row in endpoints if int(row["t"]) <= horizon}):
+        at_risk = sum(int(row["t"]) >= time for row in endpoints)
+        d_operation = sum(
+            int(row["t"]) == time and int(row["evento"]) == 1 for row in endpoints
+        )
+        d_exit = sum(
+            int(row["t"]) == time and int(row["evento"]) == 2 for row in endpoints
+        )
+        operation += survival * d_operation / at_risk
+        exits += survival * d_exit / at_risk
+        survival *= 1 - (d_operation + d_exit) / at_risk
+    return operation, exits
+
+
+def _verify_prices(
+    workbook_path: Path, cpi_path: Path, editions: set[int]
+) -> pd.DataFrame:
+    sheet = pd.read_excel(workbook_path, sheet_name="Monthly Prices", header=None)
+    copper_columns = []
+    for row in range(min(8, len(sheet) - 1)):
+        for column in range(sheet.shape[1]):
+            if (
+                str(sheet.iat[row, column]).strip() == "Copper"
+                and str(sheet.iat[row + 1, column]).strip() == "($/mt)"
+            ):
+                copper_columns.append(column)
+    if len(copper_columns) != 1:
+        raise ValueError("columna Copper ($/mt) no única")
+    pattern = re.compile(r"^(\d{4})M(\d{2})$")
+    period_counts = {
+        column: sum(
+            bool(pattern.fullmatch(str(value).strip()))
+            for value in sheet.iloc[:, column]
+            if pd.notna(value)
+        )
+        for column in range(sheet.shape[1])
+    }
+    period_column = max(period_counts, key=period_counts.get)
+    monthly = {}
+    for period, value in zip(
+        sheet.iloc[:, period_column], sheet.iloc[:, copper_columns[0]], strict=True
+    ):
+        match = pattern.fullmatch(str(period).strip())
+        if match and pd.notna(value):
+            monthly[(int(match.group(1)), int(match.group(2)))] = float(value)
+    cpi_frame = pd.read_csv(cpi_path)
+    cpi_s1 = {int(row.anio): float(row.s1) for row in cpi_frame.itertuples()}
+    row_2025 = cpi_frame.loc[cpi_frame["anio"].eq(2025)].iloc[0]
+    annual_2025 = float((row_2025["s1"] + row_2025["s2"]) / 2)
+    rows = []
+    for edition in sorted(editions):
+        values = [monthly[(edition, month)] for month in range(1, 7)]
+        rows.append(
+            {
+                "ed_prev": edition,
+                "log_precio_cu": math.log(
+                    sum(values) / 6 * annual_2025 / cpi_s1[edition]
+                ),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _verify_extended_data(
+    transitions: pd.DataFrame,
+    panel: pd.DataFrame,
+    prices: pd.DataFrame,
+) -> pd.DataFrame:
+    data = transitions.copy()
+    data["grupo_sector"] = data["sector"].map(_sector_group)
+    data["log_capex"] = pd.to_numeric(
+        data["capex_prev_real"], errors="coerce"
+    ).map(lambda value: math.log(value) if pd.notna(value) and value > 0 else math.nan)
+    data["horizonte"] = pd.to_numeric(data["pem_prev"], errors="coerce") - pd.to_numeric(
+        data["ed_prev"], errors="coerce"
+    )
+    data["atraso"] = pd.to_numeric(data["delta_pem"], errors="coerce").gt(0).astype(int)
+    operators = panel[["project_id", "edicion", "operador_norm"]].drop_duplicates(
+        ["project_id", "edicion"]
+    ).rename(columns={"edicion": "ed_prev"})
+    data = data.merge(operators, on=["project_id", "ed_prev"], validate="many_to_one")
+    operator = data["operador_norm"].fillna("").astype(str).str.upper()
+    data["estatal"] = operator.str.contains(r"CODELCO|ENAMI", regex=True).astype(int)
+    data = data.merge(prices, on="ed_prev", validate="many_to_one")
+    return data.dropna(
+        subset=[
+            "project_id",
+            "tasa_deriva",
+            "condicion_prev",
+            "grupo_sector",
+            "log_capex",
+            "horizonte",
+            "log_precio_cu",
+        ]
+    )
+
+
+def _clustered_ols(
+    data: pd.DataFrame, formula: str
+) -> tuple[pd.Series, pd.Series]:
+    outcome, design = dmatrices(formula, data, return_type="dataframe")
+    x = design.to_numpy()
+    y = outcome.iloc[:, 0].to_numpy()
+    beta = np.linalg.lstsq(x, y, rcond=None)[0]
+    residual = y - x @ beta
+    bread = np.linalg.pinv(x.T @ x)
+    meat = np.zeros((x.shape[1], x.shape[1]))
+    groups = data.loc[design.index, "project_id"]
+    for group in groups.unique():
+        mask = groups.eq(group).to_numpy()
+        score = x[mask].T @ residual[mask]
+        meat += np.outer(score, score)
+    group_count = groups.nunique()
+    correction = group_count / (group_count - 1) * (len(x) - 1) / (len(x) - x.shape[1])
+    covariance = correction * bread @ meat @ bread
+    se = np.sqrt(np.clip(np.diag(covariance), 0, None))
+    p = np.array([math.erfc(abs(value) / math.sqrt(2)) for value in beta / se])
+    return pd.Series(beta, index=design.columns), pd.Series(p, index=design.columns)
+
+
+def _verify_firth(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    if np.linalg.matrix_rank(x) < x.shape[1]:
+        raise ValueError("Firth independiente requiere rango completo")
+    beta = np.zeros(x.shape[1])
+    def objective(candidate: np.ndarray) -> float:
+        eta = np.clip(x @ candidate, -35, 35)
+        probability = 1 / (1 + np.exp(-eta))
+        weights = np.clip(probability * (1 - probability), 1e-12, None)
+        sign, logdet = np.linalg.slogdet(x.T @ (weights[:, None] * x))
+        return (
+            -np.inf
+            if sign <= 0
+            else float(np.sum(y * eta - np.logaddexp(0, eta)) + 0.5 * logdet)
+        )
+
+    current = objective(beta)
+    for _ in range(100):
+        probability = 1 / (1 + np.exp(-np.clip(x @ beta, -35, 35)))
+        weights = np.clip(probability * (1 - probability), 1e-12, None)
+        information = x.T @ (weights[:, None] * x)
+        inverse = np.linalg.pinv(information)
+        leverage = np.sum((x @ inverse) * x, axis=1) * weights
+        step = inverse @ (x.T @ (y - probability + leverage * (0.5 - probability)))
+        scale = 1.0
+        candidate = beta + step
+        candidate_value = objective(candidate)
+        while candidate_value < current - 1e-12 and scale > 2**-30:
+            scale /= 2
+            candidate = beta + scale * step
+            candidate_value = objective(candidate)
+        beta = candidate
+        current = candidate_value
+        if np.max(np.abs(scale * step)) < 1e-8:
+            return beta
+    raise ValueError("Firth independiente no converge")
+
+
+def _verify_auc(y: pd.Series, probability: np.ndarray) -> float:
+    ranks = pd.Series(probability).rank(method="average")
+    positive = y.reset_index(drop=True).eq(1)
+    n_positive = int(positive.sum())
+    n_negative = len(y) - n_positive
+    return float(
+        (ranks[positive].sum() - n_positive * (n_positive + 1) / 2)
+        / (n_positive * n_negative)
+    )
+
+
 def _recalculate(
     panel_path: Path,
     projects_path: Path,
     cpi_path: Path,
     egresos_path: Path | None = None,
+    copper_workbook_path: Path | None = None,
 ) -> dict[str, float | int | None]:
     panel = pd.read_parquet(panel_path)
     projects = pd.read_parquet(projects_path)
@@ -317,6 +505,8 @@ def _recalculate(
     ]
     base_cif = _cif_at_six(base_probable)
     possible_cif = _cif_at_six(possible_potential)
+    base_cif_four = _cif_at(base_probable, 4)
+    possible_cif_four = _cif_at(possible_potential, 4)
     ols_values = recalculate_ols(pd.DataFrame(transition_rows))
 
     threshold = panel.loc[
@@ -385,6 +575,10 @@ def _recalculate(
         "cif_sal_6_base_probable": base_cif[1],
         "cif_op_6_posible_potencial": possible_cif[0],
         "cif_sal_6_posible_potencial": possible_cif[1],
+        "cif_op_4_base_probable": base_cif_four[0],
+        "cif_sal_4_base_probable": base_cif_four[1],
+        "cif_op_4_posible_potencial": possible_cif_four[0],
+        "cif_sal_4_posible_potencial": possible_cif_four[1],
         **ols_values,
     }
     if egresos_path is not None:
@@ -433,6 +627,104 @@ def _recalculate(
                 ),
             }
         )
+    if copper_workbook_path is not None:
+        transitions = pd.DataFrame(transition_rows)
+        prices = _verify_prices(
+            copper_workbook_path,
+            cpi_path,
+            {int(value) for value in panel["edicion"].unique()},
+        )
+        data = _verify_extended_data(transitions, panel, prices)
+        formula = f"tasa_deriva ~ {VERIFY_TERMS}"
+        coefficients, p_values = _clustered_ols(data, formula)
+        potential = 'C(condicion_prev, Treatment("BASE"))[T.POTENCIAL]'
+        result.update(
+            {
+                "ols_amp_coef_potencial": float(coefficients[potential]),
+                "ols_amp_coef_precio_cu": float(coefficients["log_precio_cu"]),
+                "ols_amp_p_precio_cu": float(p_values["log_precio_cu"]),
+                "ols_amp_coef_estatal": float(coefficients["estatal"]),
+                "ols_amp_p_estatal": float(p_values["estatal"]),
+            }
+        )
+        train = data.loc[data["ed_prev"].le(2019)]
+        test = data.loc[data["ed_prev"].ge(2020)]
+        prediction_map: dict[str, np.ndarray] = {}
+        for name, terms in {
+            "completo": VERIFY_TERMS,
+            "solo_condicion": 'C(condicion_prev, Treatment("BASE"))',
+        }.items():
+            y_train, x_train = dmatrices(
+                f"atraso ~ {terms}", train, return_type="dataframe"
+            )
+            x_test = build_design_matrices(
+                [x_train.design_info], test, return_type="dataframe"
+            )[0]
+            beta = _verify_firth(
+                x_train.to_numpy(), y_train.iloc[:, 0].to_numpy()
+            )
+            prediction_map[name] = 1 / (
+                1 + np.exp(-np.clip(x_test.to_numpy() @ beta, -35, 35))
+            )
+        observed = test["atraso"].astype(float).reset_index(drop=True)
+        prevalence = float(train["atraso"].mean())
+        complete_probability = prediction_map["completo"]
+        result.update(
+            {
+                "auc_test_completo": _verify_auc(observed, complete_probability),
+                "auc_test_solo_condicion": _verify_auc(
+                    observed, prediction_map["solo_condicion"]
+                ),
+                "brier_test_completo": float(
+                    ((observed - complete_probability) ** 2).mean()
+                ),
+                "brier_test_prevalencia": float(
+                    ((observed - prevalence) ** 2).mean()
+                ),
+                "calibracion_test_completo": float(
+                    complete_probability.mean() - observed.mean()
+                ),
+                "n_train": len(train),
+                "n_test": len(test),
+            }
+        )
+        scenario_specs = {
+            "principal": (data, formula),
+            "sin_par_2021_2023": (data.loc[~data["ed_prev"].eq(2021)], formula),
+            "sin_estatales": (
+                data.loc[data["estatal"].eq(0)],
+                formula.replace(" + estatal", ""),
+            ),
+        }
+        robust = 0
+        for sample, scenario_formula in scenario_specs.values():
+            scenario_coef, scenario_p = _clustered_ols(sample, scenario_formula)
+            robust += int(
+                scenario_coef[potential] > 0 and scenario_p[potential] < 0.05
+            )
+        result["n_escenarios_regresion"] = len(scenario_specs)
+        result["n_escenarios_potencial_robusto"] = robust
+        if egresos_path is not None:
+            comparable = egresos.loc[
+                egresos["motivo"].isin({"operacion", "reestructuracion"})
+            ]
+            discrepancies = 0
+            for exit_row in comparable.itertuples(index=False):
+                source = panel.loc[
+                    panel["edicion"].eq(exit_row.edicion_desde)
+                    & panel["proyecto_raw"].eq(exit_row.proyecto_raw)
+                ].iloc[0]
+                rule = (
+                    "operacion"
+                    if pd.notna(source["puesta_en_marcha"])
+                    and float(source["puesta_en_marcha"])
+                    <= int(exit_row.edicion_hasta)
+                    else "reestructuracion"
+                )
+                discrepancies += int(rule != exit_row.motivo)
+            result["pct_regla_fecha_discrepante"] = _percent(
+                discrepancies, len(comparable)
+            )
     return result
 
 
@@ -450,6 +742,7 @@ def verify_claims_register(
     projects_path: Path,
     cpi_path: Path,
     egresos_path: Path | None = None,
+    copper_workbook_path: Path | None = None,
 ) -> list[dict[str, object]]:
     """Recalculate and label every claim without reading derived indicators."""
     expected = _recalculate(
@@ -457,6 +750,7 @@ def verify_claims_register(
         projects_path,
         cpi_path,
         egresos_path,
+        copper_workbook_path,
     )
     verified: list[dict[str, object]] = []
     for claim in claims:

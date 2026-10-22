@@ -39,6 +39,10 @@ def build_report(
     indicators: list[dict[str, Any]] | None = None,
     models: dict[str, list[dict[str, Any]]] | None = None,
     outcome_reconciliation: list[dict[str, Any]] | None = None,
+    robustness: list[dict[str, Any]] | None = None,
+    temporal_validation: list[dict[str, Any]] | None = None,
+    calibration: list[dict[str, Any]] | None = None,
+    date_rule: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     outcomes: dict[str, int] = {}
     outcome_sources: dict[str, int] = {}
@@ -64,6 +68,12 @@ def build_report(
         "catalogos": unknowns,
         "indicadores": [] if indicators is None else indicators,
         "modelos": {"cif": [], "ols": [], "logit": []} if models is None else models,
+        "robustez": [] if robustness is None else robustness,
+        "validacion_temporal": (
+            [] if temporal_validation is None else temporal_validation
+        ),
+        "calibracion_test": [] if calibration is None else calibration,
+        "regla_fecha": [] if date_rule is None else date_rule,
         "decisiones_tomadas": DECISIONES if decisions is None else decisions,
     }
 
@@ -174,14 +184,49 @@ def write_report(report: dict[str, Any], interim_dir: Path) -> tuple[Path, Path]
         ],
     )
     logit = _table(
-        ["Término", "Razón de odds", "EE", "IC inferior", "IC superior", "p", "n", "Pseudo-R²"],
+        ["Término", "Razón de odds", "EE", "Tipo EE", "IC inferior", "IC superior", "p", "n", "Pseudo-R²"],
         [
             [
-                item["termino"], item["coef"], item["ee"], item["ic_inf"],
+                item["termino"], item["coef"], item["ee"], item.get("ee_tipo", ""), item["ic_inf"],
                 item["ic_sup"], item["p"], item["n"], item["pseudo_r2"],
             ]
             for item in models["logit"]
         ],
+    )
+    ols_extended = _table(
+        ["Término", "Coeficiente", "EE", "IC inferior", "IC superior", "p", "n", "R²"],
+        [
+            [
+                item["termino"], item["coef"], item["ee"], item["ic_inf"],
+                item["ic_sup"], item["p"], item["n"], item["r2"],
+            ]
+            for item in models.get("ols_ampliado", [])
+        ],
+    )
+    robustness = _table(
+        ["Escenario", "Modelo", "Métrica", "Valor", "n"],
+        [
+            [item["escenario"], item["modelo"], item["metrica"], item["valor"], item["n"]]
+            for item in report["robustez"]
+        ],
+    )
+    validation = _table(
+        ["Modelo", "AUC", "Brier", "Calibración", "n train", "n test"],
+        [
+            [item["modelo"], item["auc"], item["brier"], item["calibracion_global"], item["n_train"], item["n_test"]]
+            for item in report["validacion_temporal"]
+        ],
+    )
+    calibration = _table(
+        ["Quintil", "Media predicha", "Tasa observada", "n"],
+        [
+            [item["quintil"], item["media_predicha"], item["tasa_observada"], item["n"]]
+            for item in report["calibracion_test"]
+        ],
+    )
+    date_rule = _table(
+        ["Declarado", "Regla", "n"],
+        [[item["declarado"], item["regla"], item["n"]] for item in report["regla_fecha"]],
     )
     text = (
         f"# {DISCLAIMER}\n\n## Conciliación por edición\n\n{reconciliation}\n\n"
@@ -205,6 +250,16 @@ def write_report(report: dict[str, Any], interim_dir: Path) -> tuple[Path, Path]
         + ols
         + "\n\n### Logit\n\n"
         + logit
+        + "\n\n### OLS ampliado\n\n"
+        + ols_extended
+        + "\n\n## Robustez\n\n"
+        + robustness
+        + "\n\n## Validación temporal\n\n"
+        + validation
+        + "\n\n### Calibración por quintiles\n\n"
+        + calibration
+        + "\n\n## Regla de fecha contra desenlace declarado\n\n"
+        + date_rule
         + "\n\n## Catálogos desconocidos\n\n"
         + "\n".join(f"- {key}: {values}" for key, values in report["catalogos"].items())
         + "\n\n## Decisiones tomadas\n\n"

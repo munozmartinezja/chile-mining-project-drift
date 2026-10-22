@@ -1,10 +1,18 @@
 import math
 
+import numpy as np
 import pandas as pd
 import pytest
 
-from cpdrift.regression import fit_logit, fit_ols
-from cpdrift.verify import recalculate_ols
+from cpdrift.regression import (
+    OLS_EXTENDED_FORMULA,
+    fit_extended_ols,
+    fit_logit,
+    fit_ols,
+    prepare_extended_regression_data,
+    prepare_regression_data,
+)
+from cpdrift.verify import _clustered_ols, recalculate_ols
 
 
 def synthetic_transitions() -> pd.DataFrame:
@@ -72,7 +80,11 @@ def test_logit_reports_odds_ratios_and_requested_columns() -> None:
     transitions = synthetic_transitions()
     transitions["delta_pem"] = [1 if index % 5 in {0, 1} else -1 for index in range(len(transitions))]
 
-    result = fit_logit(transitions)
+    data = prepare_regression_data(transitions)
+    rng = np.random.default_rng(19)
+    data["estatal"] = rng.binomial(1, 0.4, len(data))
+    data["log_precio_cu"] = rng.normal(8, 0.2, len(data))
+    result = fit_logit(data)
 
     assert set(result.columns) == {
         "termino",
@@ -83,6 +95,52 @@ def test_logit_reports_odds_ratios_and_requested_columns() -> None:
         "p",
         "n",
         "pseudo_r2",
+        "ee_tipo",
     }
     assert result["coef"].gt(0).all()
     assert result["n"].eq(len(transitions)).all()
+    assert result["ee_tipo"].eq("modelo").all()
+    assert "Intercept" not in set(result["termino"])
+
+
+def test_extended_variables_use_previous_appearance_operator_and_price() -> None:
+    transitions = synthetic_transitions().iloc[[0, 2]].copy()
+    panel = pd.DataFrame(
+        [
+            {"project_id": transitions.iloc[0]["project_id"], "edicion": 2020, "operador_norm": "CODELCO Norte"},
+            {"project_id": transitions.iloc[1]["project_id"], "edicion": 2020, "operador_norm": "Privada"},
+        ]
+    ).drop_duplicates(["project_id", "edicion"])
+    prices = pd.DataFrame([{"edicion": 2020, "precio_real_2025": math.exp(8)}])
+
+    result = prepare_extended_regression_data(transitions, panel, prices)
+
+    assert result.iloc[0]["estatal"] == 1
+    assert result.iloc[1]["estatal"] == 0
+    assert result["log_precio_cu"].eq(8).all()
+
+
+def test_independent_clustered_ols_matches_expanded_model() -> None:
+    rng = np.random.default_rng(42)
+    size = 200
+    data = pd.DataFrame(
+        {
+            "project_id": [f"P{index // 2}" for index in range(size)],
+            "tasa_deriva": rng.normal(size=size),
+            "condicion_prev": rng.choice(
+                ["BASE", "PROBABLE", "POSIBLE", "POTENCIAL"], size=size
+            ),
+            "grupo_sector": rng.choice(["COBRE", "ORO", "OTROS"], size=size),
+            "log_capex": rng.normal(5, 1, size=size),
+            "horizonte": rng.normal(4, 2, size=size),
+            "estatal": rng.binomial(1, 0.3, size=size),
+            "log_precio_cu": rng.normal(8, 0.2, size=size),
+        }
+    )
+
+    expected = fit_extended_ols(data).set_index("termino")
+    coefficients, p_values = _clustered_ols(data, OLS_EXTENDED_FORMULA)
+
+    for term in ("estatal", "log_precio_cu"):
+        assert coefficients[term] == pytest.approx(expected.loc[term, "coef"], abs=1e-9)
+        assert p_values[term] == pytest.approx(expected.loc[term, "p"], abs=1e-9)

@@ -80,6 +80,14 @@ class ReconciliationReferences:
     ajustes: pd.DataFrame
 
 
+@dataclass(frozen=True)
+class DateRuleCheck:
+    """Confusion matrix and row detail for the former date rule."""
+
+    matriz: pd.DataFrame
+    detalle: pd.DataFrame
+
+
 def _read_csv(path: Path, columns: list[str]) -> pd.DataFrame:
     frame = pd.read_csv(path)
     if frame.columns.tolist() != columns:
@@ -372,5 +380,72 @@ def write_reconciliation(table: pd.DataFrame, interim_dir: Path) -> Path:
     """Write the verified outcome reconciliation table."""
     interim_dir.mkdir(parents=True, exist_ok=True)
     path = interim_dir / "conciliacion_desenlaces.parquet"
+    table.to_parquet(path, index=False)
+    return path
+
+
+def build_date_rule_check(panel: pd.DataFrame, egresos: pd.DataFrame) -> DateRuleCheck:
+    """Compare declared outcomes with the former planned-start rule."""
+    eligible = egresos.loc[
+        egresos["motivo"].isin({"operacion", "reestructuracion"})
+    ]
+    rows = []
+    for exit_row in eligible.itertuples(index=False):
+        matches = panel.loc[
+            panel["edicion"].eq(exit_row.edicion_desde)
+            & panel["proyecto_raw"].eq(exit_row.proyecto_raw)
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                f"fila de salida no única para {exit_row.edicion_desde} / "
+                f"{exit_row.proyecto_raw}: {len(matches)}"
+            )
+        pem = matches.iloc[0]["puesta_en_marcha"]
+        rule = (
+            "operacion"
+            if pd.notna(pem) and float(pem) <= int(exit_row.edicion_hasta)
+            else "reestructuracion"
+        )
+        rows.append(
+            {
+                "edicion_desde": int(exit_row.edicion_desde),
+                "edicion_hasta": int(exit_row.edicion_hasta),
+                "proyecto_raw": exit_row.proyecto_raw,
+                "pem": pem,
+                "declarado": exit_row.motivo,
+                "regla": rule,
+                "discrepante": rule != exit_row.motivo,
+            }
+        )
+    detail = pd.DataFrame(
+        rows,
+        columns=[
+            "edicion_desde",
+            "edicion_hasta",
+            "proyecto_raw",
+            "pem",
+            "declarado",
+            "regla",
+            "discrepante",
+        ],
+    )
+    if detail.empty:
+        matrix = pd.DataFrame(columns=["declarado", "regla", "n"])
+    else:
+        matrix = (
+            detail.groupby(["declarado", "regla"], as_index=False)
+            .size()
+            .rename(columns={"size": "n"})
+        )
+    return DateRuleCheck(matrix, detail)
+
+
+def write_date_rule_check(check: DateRuleCheck, interim_dir: Path) -> Path:
+    """Write matrix and detail in one typed long table."""
+    interim_dir.mkdir(parents=True, exist_ok=True)
+    matrix = check.matriz.assign(tipo="matriz")
+    detail = check.detalle.assign(tipo="detalle")
+    table = pd.concat([matrix, detail], ignore_index=True, sort=False)
+    path = interim_dir / "regla_vs_declarado.parquet"
     table.to_parquet(path, index=False)
     return path
