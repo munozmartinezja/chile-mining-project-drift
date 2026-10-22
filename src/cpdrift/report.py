@@ -22,6 +22,7 @@ def build_report(
     projects: list[dict[str, Any]],
     unknowns: dict[str, list[str]],
     decisions: list[dict[str, Any]] | None = None,
+    indicators: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     outcomes: dict[str, int] = {}
     reentries = 0
@@ -35,6 +36,7 @@ def build_report(
         "identidad": identity,
         "desenlaces": {"categorias": outcomes, "reingresos": reentries},
         "catalogos": unknowns,
+        "indicadores": [] if indicators is None else indicators,
         "decisiones_tomadas": DECISIONES if decisions is None else decisions,
     }
 
@@ -77,13 +79,22 @@ def write_report(report: dict[str, Any], interim_dir: Path) -> tuple[Path, Path]
         ],
     )
     outcomes = report["desenlaces"]
+    indicators = _table(
+        ["Cifra", "Valor", "Unidad", "Estado"],
+        [
+            [item["descripcion"], item["valor"], item["unidad"], item["estado"]]
+            for item in report["indicadores"]
+        ],
+    )
     text = (
         f"# {DISCLAIMER}\n\n## Conciliación por edición\n\n{reconciliation}\n\n"
         f"## Identidad\n\n{identity}\n\n## Desenlaces\n\n"
         + "\n".join(
             f"- {key}: {value}" for key, value in outcomes["categorias"].items()
         )
-        + f"\n- reingresos: {outcomes['reingresos']}\n\n## Catálogos desconocidos\n\n"
+        + f"\n- reingresos: {outcomes['reingresos']}\n\n## Indicadores\n\n"
+        + indicators
+        + "\n\n## Catálogos desconocidos\n\n"
         + "\n".join(f"- {key}: {values}" for key, values in report["catalogos"].items())
         + "\n\n## Decisiones tomadas\n\n"
         + "\n".join(f"- {item}" for item in report["decisiones_tomadas"])
