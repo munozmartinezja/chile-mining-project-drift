@@ -46,8 +46,8 @@ def prepare_survival_endpoints(projects: pd.DataFrame) -> pd.DataFrame:
         first = int(project.primera_edicion)
         last = int(project.ultima_edicion)
         outcome = str(project.desenlace)
-        if outcome == "vigente":
-            duration = 2025 - first
+        if outcome in {"vigente", "censurado"}:
+            duration = (2025 if outcome == "vigente" else last) - first
             event = 0
         else:
             if last not in next_edition:

@@ -14,20 +14,31 @@ COUNT_IDS = {
     "n_proyectos",
     "n_filas_agregadas_excluidas",
     "n_transiciones",
-    "n_salidas_sin_operar",
-    "n_salidas_operacion",
+    "n_salidas_umbral90_sin_operar",
+    "n_salidas_umbral90_operacion",
+    "n_desenlace_operacion",
+    "n_desenlace_sin_operar",
+    "n_desenlace_censurado",
+    "n_pares_conciliados",
     "n_cohorte_incidente",
     "ols_n",
 }
 
 DATA_EDITIONS = [*range(2014, 2022), 2023, 2024, 2025]
+AGGREGATE_PREFIX = "OTROS"
+AGGREGATE_CONTAINS = "PROYECTOS DE INFORMACION"
+AGGREGATE_EXACT_NAMES = frozenset({"PROYECTOS FURE", "TRANQUES"})
 
 
 def _aggregate_name(value: object) -> bool:
     if value is None or pd.isna(value):
         return False
     name = str(value)
-    return name.startswith("OTROS") or "PROYECTOS DE INFORMACION" in name
+    return (
+        name.startswith(AGGREGATE_PREFIX)
+        or AGGREGATE_CONTAINS in name
+        or name in AGGREGATE_EXACT_NAMES
+    )
 
 
 def _mean(values: list[float]) -> float | None:
@@ -143,7 +154,10 @@ def _cif_at_six(
 
 
 def _recalculate(
-    panel_path: Path, projects_path: Path, cpi_path: Path
+    panel_path: Path,
+    projects_path: Path,
+    cpi_path: Path,
+    egresos_path: Path | None = None,
 ) -> dict[str, float | int | None]:
     panel = pd.read_parquet(panel_path)
     projects = pd.read_parquet(projects_path)
@@ -268,8 +282,8 @@ def _recalculate(
         outcome = str(project_reference.loc[project_id, "desenlace"])
         first_edition = int(first["edicion"])
         last_edition = int(last["edicion"])
-        if outcome == "vigente":
-            duration = 2025 - first_edition
+        if outcome in {"vigente", "censurado"}:
+            duration = (2025 if outcome == "vigente" else last_edition) - first_edition
             event = 0
         else:
             duration = next_edition[last_edition] - first_edition
@@ -315,18 +329,35 @@ def _recalculate(
     }
     exits_operation = 0
     exits_without_operation = 0
+    egresos = pd.DataFrame()
+    if egresos_path is not None:
+        egresos = pd.read_csv(egresos_path)
+    all_ids = {
+        int(edition): set(group["project_id"])
+        for edition, group in panel.groupby("edicion", sort=False)
+    }
     for previous_edition, next_edition in itertools.pairwise(editions):
         previous = edition_rows.get(previous_edition, pd.DataFrame())
         following = edition_rows.get(next_edition, pd.DataFrame())
         previous_ids = set(previous.index)
-        following_ids = set(following.index)
-        for project_id in previous_ids - following_ids:
-            pem = previous.loc[project_id, "puesta_en_marcha"]
-            if pd.notna(pem) and float(pem) <= next_edition:
-                exits_operation += 1
-            else:
-                exits_without_operation += 1
-    return {
+        for project_id in previous_ids - all_ids.get(next_edition, set()):
+            if egresos.empty:
+                raise ValueError("se requiere egresos_declarados para verificar salidas")
+            raw_name = previous.loc[project_id, "proyecto_raw"]
+            matches = egresos.loc[
+                egresos["edicion_desde"].eq(previous_edition)
+                & egresos["edicion_hasta"].eq(next_edition)
+                & egresos["proyecto_raw"].eq(raw_name)
+            ]
+            if len(matches) != 1:
+                raise ValueError(
+                    f"egreso no único para {previous_edition} / {raw_name}: "
+                    f"{len(matches)}"
+                )
+            reason = str(matches.iloc[0]["motivo"])
+            exits_operation += int(reason == "operacion")
+            exits_without_operation += int(reason == "reestructuracion")
+    result: dict[str, float | int | None] = {
         "n_proyectos": int(panel["project_id"].nunique()),
         "n_filas_agregadas_excluidas": excluded,
         "n_transiciones": transition_count,
@@ -347,8 +378,8 @@ def _recalculate(
             sum(value <= 1 for value in operated_drifts), len(operated_drifts)
         ),
         "mediana_deriva_acumulada_operados": _median(operated_drifts),
-        "n_salidas_sin_operar": exits_without_operation,
-        "n_salidas_operacion": exits_operation,
+        "n_salidas_umbral90_sin_operar": exits_without_operation,
+        "n_salidas_umbral90_operacion": exits_operation,
         "n_cohorte_incidente": len(incident),
         "cif_op_6_base_probable": base_cif[0],
         "cif_sal_6_base_probable": base_cif[1],
@@ -356,6 +387,53 @@ def _recalculate(
         "cif_sal_6_posible_potencial": possible_cif[1],
         **ols_values,
     }
+    if egresos_path is not None:
+        outcome_counts = {
+            "entro_en_operacion": 0,
+            "salio_sin_operar": 0,
+            "censurado": 0,
+        }
+        outcome_by_reason = {
+            "operacion": "entro_en_operacion",
+            "reestructuracion": "salio_sin_operar",
+            "metodologia": "censurado",
+            "fusion": "censurado",
+            "no_declarado": "censurado",
+        }
+        for _, history in panel.groupby("project_id", sort=False):
+            last = history.sort_values("edicion", kind="stable").iloc[-1]
+            last_edition = int(last["edicion"])
+            if last_edition == 2025:
+                continue
+            matches = egresos.loc[
+                egresos["edicion_desde"].eq(last_edition)
+                & egresos["proyecto_raw"].eq(last["proyecto_raw"])
+            ]
+            if len(matches) != 1:
+                raise ValueError(
+                    f"egreso no único para {last_edition} / "
+                    f"{last['proyecto_raw']}: {len(matches)}"
+                )
+            reason = str(matches.iloc[0]["motivo"])
+            if reason not in outcome_by_reason:
+                raise ValueError(f"motivo de salida desconocido: {reason}")
+            outcome_counts[outcome_by_reason[reason]] += 1
+        result.update(
+            {
+                "n_desenlace_operacion": outcome_counts["entro_en_operacion"],
+                "n_desenlace_sin_operar": outcome_counts["salio_sin_operar"],
+                "n_desenlace_censurado": outcome_counts["censurado"],
+                "pct_salidas_confirmadas_por_nombre": (
+                    None
+                    if egresos.empty
+                    else float(egresos["fuente"].eq("nombre").mean() * 100)
+                ),
+                "n_pares_conciliados": int(
+                    max(panel["edicion"].nunique() - 1, 0)
+                ),
+            }
+        )
+    return result
 
 
 def _matches(claim_id: str, stated: object, recalculated: object) -> bool:
@@ -371,9 +449,15 @@ def verify_claims_register(
     panel_path: Path,
     projects_path: Path,
     cpi_path: Path,
+    egresos_path: Path | None = None,
 ) -> list[dict[str, object]]:
     """Recalculate and label every claim without reading derived indicators."""
-    expected = _recalculate(panel_path, projects_path, cpi_path)
+    expected = _recalculate(
+        panel_path,
+        projects_path,
+        cpi_path,
+        egresos_path,
+    )
     verified: list[dict[str, object]] = []
     for claim in claims:
         item = dict(claim)

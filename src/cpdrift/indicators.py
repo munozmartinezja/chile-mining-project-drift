@@ -64,6 +64,9 @@ ENTRY_EXIT_COLUMNS = [
     "entradas_nuevas",
     "reingresos",
 ]
+AGGREGATE_PREFIX = "OTROS"
+AGGREGATE_CONTAINS = "PROYECTOS DE INFORMACION"
+AGGREGATE_EXACT_NAMES = frozenset({"PROYECTOS FURE", "TRANQUES"})
 
 
 @dataclass(frozen=True)
@@ -95,7 +98,11 @@ def _is_aggregate(value: object) -> bool:
     if value is None or pd.isna(value):
         return False
     name = str(value)
-    return name.startswith("OTROS") or "PROYECTOS DE INFORMACION" in name
+    return (
+        name.startswith(AGGREGATE_PREFIX)
+        or AGGREGATE_CONTAINS in name
+        or name in AGGREGATE_EXACT_NAMES
+    )
 
 
 def _with_real_capex(
@@ -238,7 +245,10 @@ def _build_reliability(projects: pd.DataFrame) -> dict[str, float | int | None]:
     }
 
 
-def _build_entries_exits(panel: pd.DataFrame) -> pd.DataFrame:
+def _build_entries_exits(
+    panel: pd.DataFrame,
+    egresos: pd.DataFrame,
+) -> pd.DataFrame:
     eligible = panel.loc[pd.to_numeric(panel["inversion_mmusd"], errors="coerce").ge(90)]
     editions = sorted(int(value) for value in panel["edicion"].unique())
     seen: set[object] = set()
@@ -247,25 +257,40 @@ def _build_entries_exits(panel: pd.DataFrame) -> pd.DataFrame:
         edition: group.drop_duplicates("project_id").set_index("project_id")
         for edition, group in eligible.groupby("edicion", sort=False)
     }
+    all_ids = {
+        int(edition): set(group["project_id"])
+        for edition, group in panel.groupby("edicion", sort=False)
+    }
     for ed_prev, ed_next in itertools.pairwise(editions):
         previous = by_edition.get(ed_prev, pd.DataFrame())
         following = by_edition.get(ed_next, pd.DataFrame())
         previous_ids = set(previous.index)
         following_ids = set(following.index)
-        exiting = previous_ids - following_ids
+        exiting = previous_ids - all_ids.get(ed_next, set())
         entering = following_ids - previous_ids
-        operation = sum(
-            pd.notna(previous.loc[value, "puesta_en_marcha"])
-            and float(previous.loc[value, "puesta_en_marcha"]) <= ed_next
-            for value in exiting
-        )
+        operation = 0
+        without_operation = 0
+        for project_id in exiting:
+            raw_name = previous.loc[project_id, "proyecto_raw"]
+            matches = egresos.loc[
+                egresos["edicion_desde"].eq(ed_prev)
+                & egresos["edicion_hasta"].eq(ed_next)
+                & egresos["proyecto_raw"].eq(raw_name)
+            ]
+            if len(matches) != 1:
+                raise ValueError(
+                    f"egreso no único para {ed_prev} / {raw_name}: {len(matches)}"
+                )
+            reason = str(matches.iloc[0]["motivo"])
+            operation += int(reason == "operacion")
+            without_operation += int(reason == "reestructuracion")
         rows.append(
             {
                 "ed_prev": ed_prev,
                 "ed_next": ed_next,
                 "n_base": len(previous_ids),
                 "salidas_operacion": operation,
-                "salidas_sin_operar": len(exiting) - operation,
+                "salidas_sin_operar": without_operation,
                 "entradas_nuevas": len(entering - seen),
                 "reingresos": len(entering & seen),
             }
@@ -320,7 +345,10 @@ def _build_summaries(
 
 
 def build_indicator_tables(
-    panel: pd.DataFrame, projects: pd.DataFrame, cpi_path: Path
+    panel: pd.DataFrame,
+    projects: pd.DataFrame,
+    cpi_path: Path,
+    egresos: pd.DataFrame | None = None,
 ) -> IndicatorTables:
     """Build all drift tables without mutating the input frames."""
     filtered, excluded = _with_real_capex(panel, load_annual_cpi(cpi_path))
@@ -329,7 +357,10 @@ def build_indicator_tables(
     return IndicatorTables(
         transiciones=transitions,
         proyectos_deriva=project_drift,
-        entradas_salidas=_build_entries_exits(filtered),
+        entradas_salidas=_build_entries_exits(
+            filtered,
+            pd.DataFrame() if egresos is None else egresos,
+        ),
         resumenes=_build_summaries(transitions, project_drift),
         fiabilidad=_build_reliability(project_drift),
         n_filas_agregadas_excluidas=excluded,

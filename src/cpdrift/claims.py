@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from typing import TYPE_CHECKING
 
 import pandas as pd
@@ -38,11 +40,19 @@ def _ols_value(table: pd.DataFrame, term: str) -> float | None:
     return None if row.empty else float(row.iloc[0]["coef"])
 
 
+def _snake_ascii(value: object) -> str:
+    text = unicodedata.normalize("NFKD", str(value)).encode("ascii", "ignore").decode()
+    return re.sub(r"_+", "_", re.sub(r"[^a-zA-Z0-9]+", "_", text)).strip("_").lower()
+
+
 def build_claims_register(
     tables: IndicatorTables,
     cif: pd.DataFrame | None = None,
     ols: pd.DataFrame | None = None,
     logit: pd.DataFrame | None = None,
+    projects: pd.DataFrame | None = None,
+    egresos: pd.DataFrame | None = None,
+    conciliacion: pd.DataFrame | None = None,
 ) -> list[dict[str, object]]:
     """Build the auditable list of required headline figures."""
     transitions = tables.transiciones
@@ -85,9 +95,28 @@ def build_claims_register(
         "mediana_deriva_acumulada_operados": reliability[
             "mediana_deriva_acumulada"
         ],
-        "n_salidas_sin_operar": int(entries["salidas_sin_operar"].sum()),
-        "n_salidas_operacion": int(entries["salidas_operacion"].sum()),
+        "n_salidas_umbral90_sin_operar": int(entries["salidas_sin_operar"].sum()),
+        "n_salidas_umbral90_operacion": int(entries["salidas_operacion"].sum()),
     }
+    if projects is not None and egresos is not None and conciliacion is not None:
+        outcomes = projects["desenlace"].value_counts()
+        values.update(
+            {
+                "n_desenlace_operacion": int(outcomes.get("entro_en_operacion", 0)),
+                "n_desenlace_sin_operar": int(outcomes.get("salio_sin_operar", 0)),
+                "n_desenlace_censurado": int(outcomes.get("censurado", 0)),
+                "pct_salidas_confirmadas_por_nombre": (
+                    None
+                    if egresos.empty
+                    else float(egresos["fuente"].eq("nombre").mean() * 100)
+                ),
+                "n_pares_conciliados": int(
+                    conciliacion[["edicion_desde", "edicion_hasta"]]
+                    .drop_duplicates()
+                    .shape[0]
+                ),
+            }
+        )
     if cif is not None and ols is not None:
         incident_total = cif.loc[
             cif["cohorte"].eq("incidente") & cif["grupo"].eq("TOTAL")
@@ -187,15 +216,40 @@ def build_claims_register(
             "años",
             "Mediana de deriva acumulada entre operados con dos o más apariciones.",
         ),
-        "n_salidas_sin_operar": (
-            "Salidas sin operar",
+        "n_salidas_umbral90_sin_operar": (
+            "Salidas sin operar sobre umbral homogéneo",
             "salidas",
-            "Suma de salidas cuyo PEM previo es posterior a la edición siguiente.",
+            "Suma de salidas por reestructuración con capex nominal previo de al menos 90.",
         ),
-        "n_salidas_operacion": (
-            "Salidas a operación",
+        "n_salidas_umbral90_operacion": (
+            "Salidas a operación sobre umbral homogéneo",
             "salidas",
-            "Suma de salidas cuyo PEM previo no supera la edición siguiente.",
+            "Suma de salidas a operación con capex nominal previo de al menos 90.",
+        ),
+        "n_desenlace_operacion": (
+            "Proyectos que entraron en operación",
+            "proyectos",
+            "Conteo de desenlaces declarados como operación.",
+        ),
+        "n_desenlace_sin_operar": (
+            "Proyectos que salieron sin operar",
+            "proyectos",
+            "Conteo de desenlaces declarados como reestructuración.",
+        ),
+        "n_desenlace_censurado": (
+            "Proyectos con salida censurada",
+            "proyectos",
+            "Conteo de desenlaces declarados como censurados.",
+        ),
+        "pct_salidas_confirmadas_por_nombre": (
+            "Salidas confirmadas por nombre",
+            "porcentaje",
+            "Filas con fuente nombre sobre el total de egresos declarados.",
+        ),
+        "n_pares_conciliados": (
+            "Pares de ediciones conciliados",
+            "pares",
+            "Conteo de pares distintos en la conciliación de desenlaces.",
         ),
         "n_cohorte_incidente": (
             "Proyectos de la cohorte incidente",
@@ -272,10 +326,12 @@ def build_claims_register(
                     }
                 )
     if logit is not None:
-        for index, row in enumerate(logit.itertuples(index=False), start=1):
+        for row in logit.itertuples(index=False):
+            if str(row.termino).lower() == "intercept":
+                continue
             claims.append(
                 {
-                    "id": f"logit_or_{index}",
+                    "id": f"logit_or_{_snake_ascii(row.termino)}",
                     "descripcion": f"Razón de odds para {row.termino}",
                     "valor": float(row.coef),
                     "unidad": "razón de odds",

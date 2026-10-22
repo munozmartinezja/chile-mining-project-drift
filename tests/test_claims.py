@@ -44,12 +44,34 @@ def test_claims_and_independent_verification_agree(tmp_path: Path) -> None:
                 "sector": "COBRE",
                 "region": "Atacama",
             },
+            {
+                "project_id": "A2",
+                "edicion": 2021,
+                "nombre_norm": "PROYECTOS FURE",
+                "puesta_en_marcha": 2025,
+                "inversion_mmusd": 500.0,
+                "condicion": "POSIBLE",
+                "sector": "COBRE",
+                "region": "Atacama",
+            },
+            {
+                "project_id": "A3",
+                "edicion": 2021,
+                "nombre_norm": "TRANQUES",
+                "puesta_en_marcha": 2025,
+                "inversion_mmusd": 500.0,
+                "condicion": "POSIBLE",
+                "sector": "COBRE",
+                "region": "Atacama",
+            },
         ]
     )
     projects = pd.DataFrame(
         [
             {"project_id": "P1", "desenlace": "entro_en_operacion", "reingreso": False},
             {"project_id": "A1", "desenlace": "vigente", "reingreso": False},
+            {"project_id": "A2", "desenlace": "vigente", "reingreso": False},
+            {"project_id": "A3", "desenlace": "vigente", "reingreso": False},
         ]
     )
     cpi_path = tmp_path / "cpi.csv"
@@ -66,11 +88,126 @@ def test_claims_and_independent_verification_agree(tmp_path: Path) -> None:
     verified = verify_claims_register(claims, panel_path, projects_path, cpi_path)
 
     assert {item["estado"] for item in verified} == {"verificada"}
+    assert next(
+        item["valor"]
+        for item in verified
+        if item["id"] == "n_filas_agregadas_excluidas"
+    ) == 3
     require_verified(verified)
+
+
+def test_outcome_claims_are_recalculated_from_panel_and_references(
+    tmp_path: Path,
+) -> None:
+    rows = []
+    for project_id, edition in (
+        ("O", 2020),
+        ("R", 2020),
+        ("C", 2020),
+        ("S", 2020),
+        ("S", 2021),
+        ("N", 2021),
+        ("S", 2025),
+        ("N", 2025),
+    ):
+        rows.append(
+            {
+                "project_id": project_id,
+                "edicion": edition,
+                "proyecto_raw": project_id,
+                "nombre_norm": project_id,
+                "puesta_en_marcha": 2030,
+                "inversion_mmusd": 100.0,
+                "condicion": "BASE",
+                "sector": "GRAN_MINERIA_CU",
+                "region": "Atacama",
+            }
+        )
+    panel = pd.DataFrame(rows)
+    projects = pd.DataFrame(
+        [
+            {"project_id": "O", "desenlace": "entro_en_operacion", "reingreso": False},
+            {"project_id": "R", "desenlace": "salio_sin_operar", "reingreso": False},
+            {"project_id": "C", "desenlace": "censurado", "reingreso": False},
+            {"project_id": "S", "desenlace": "vigente", "reingreso": False},
+            {"project_id": "N", "desenlace": "vigente", "reingreso": False},
+        ]
+    )
+    egresos = pd.DataFrame(
+        [
+            [2020, 2021, "O", "operacion", "nombre"],
+            [2020, 2021, "R", "reestructuracion", "cuadro"],
+            [2020, 2021, "C", "metodologia", "revision"],
+        ],
+        columns=[
+            "edicion_desde",
+            "edicion_hasta",
+            "proyecto_raw",
+            "motivo",
+            "fuente",
+        ],
+    )
+    reconciliation = pd.DataFrame(
+        [
+            {
+                "edicion_desde": 2020,
+                "edicion_hasta": 2021,
+                "categoria": "nuevos",
+                "estado": "ok",
+            },
+            {
+                "edicion_desde": 2021,
+                "edicion_hasta": 2025,
+                "categoria": "nuevos",
+                "estado": "ok",
+            },
+        ]
+    )
+    cpi_path = tmp_path / "cpi.csv"
+    pd.DataFrame(
+        {"anio": [2020, 2021, 2025], "s1": [100, 100, 100], "s2": [100, 100, 100]}
+    ).to_csv(cpi_path, index=False)
+    panel_path = tmp_path / "panel.parquet"
+    projects_path = tmp_path / "proyectos.parquet"
+    egresos_path = tmp_path / "egresos.csv"
+    panel.to_parquet(panel_path, index=False)
+    projects.to_parquet(projects_path, index=False)
+    egresos.to_csv(egresos_path, index=False)
+
+    indicators = build_indicator_tables(panel, projects, cpi_path, egresos)
+    claims = build_claims_register(
+        indicators,
+        projects=projects,
+        egresos=egresos,
+        conciliacion=reconciliation,
+    )
+    verified = verify_claims_register(
+        claims,
+        panel_path,
+        projects_path,
+        cpi_path,
+        egresos_path,
+    )
+    values = {item["id"]: item["valor"] for item in verified}
+
+    assert {item["estado"] for item in verified} == {"verificada"}
+    assert values["n_desenlace_operacion"] == 1
+    assert values["n_desenlace_sin_operar"] == 1
+    assert values["n_desenlace_censurado"] == 1
+    assert values["pct_salidas_confirmadas_por_nombre"] == pytest.approx(100 / 3)
+    assert values["n_pares_conciliados"] == 2
+    assert values["n_salidas_umbral90_operacion"] == 1
+    assert values["n_salidas_umbral90_sin_operar"] == 1
 
     changed = [dict(item) for item in claims]
     changed[0]["valor"] += 1
-    failed = verify_claims_register(changed, panel_path, projects_path, cpi_path)
+    failed = verify_claims_register(
+        changed,
+        panel_path,
+        projects_path,
+        cpi_path,
+        egresos_path,
+    )
     assert failed[0]["estado"] == "fallida"
     with pytest.raises(ValueError, match="cifras no verificadas"):
         require_verified(failed)
@@ -199,7 +336,7 @@ def test_model_claims_are_independently_verified(tmp_path: Path) -> None:
     logit = pd.DataFrame(
         [
             {
-                "termino": "Intercept",
+                "termino": 'C(condicion_prev, Treatment("BASE"))[T.POSIBLE]',
                 "coef": 1.25,
                 "ee": 0.1,
                 "ic_inf": 1.0,
@@ -230,5 +367,10 @@ def test_model_claims_are_independently_verified(tmp_path: Path) -> None:
     } == {"verificada"}
     informative = [item for item in verified if item["estado"] == "informativa"]
     assert informative
-    assert any(item["id"].startswith("logit_or_") for item in informative)
+    assert any(
+        item["id"]
+        == "logit_or_c_condicion_prev_treatment_base_t_posible"
+        for item in informative
+    )
+    assert all(item["id"] != "logit_or_intercept" for item in informative)
     require_verified(verified)

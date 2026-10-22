@@ -82,3 +82,39 @@ def test_report_json_replaces_non_finite_model_values(tmp_path: Path) -> None:
     saved = json.loads(json_path.read_text(encoding="utf-8"))
     assert saved["modelos"]["cif"][0]["ic_op_inf"] is None
     assert saved["modelos"]["cif"][0]["ic_op_sup"] is None
+
+
+def test_report_includes_outcome_reconciliation_and_sources(tmp_path: Path) -> None:
+    report = build_report(
+        [],
+        [],
+        [
+            {
+                "desenlace": "censurado",
+                "fuente_desenlace": "revision",
+                "reingreso": False,
+            }
+        ],
+        {"sector": [], "tipo_proyecto": [], "etapa": []},
+        outcome_reconciliation=[
+            {
+                "edicion_desde": 2020,
+                "edicion_hasta": 2021,
+                "categoria": "metodologia",
+                "decl_n": 1,
+                "obs_n": 1,
+                "decl_capex": 100,
+                "obs_capex": 100,
+                "delta_n": 0,
+                "delta_capex": 0,
+                "compara_capex": True,
+                "estado": "ok",
+            }
+        ],
+    )
+
+    markdown_path, _ = write_report(report, tmp_path)
+    text = markdown_path.read_text(encoding="utf-8")
+    assert "## Conciliación de desenlaces" in text
+    assert "### Fuentes de desenlace" in text
+    assert report["desenlaces"]["fuentes"] == {"revision": 1}
