@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import itertools
 import json
+import math
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 COUNT_IDS = {
@@ -14,7 +16,11 @@ COUNT_IDS = {
     "n_transiciones",
     "n_salidas_sin_operar",
     "n_salidas_operacion",
+    "n_cohorte_incidente",
+    "ols_n",
 }
+
+DATA_EDITIONS = [*range(2014, 2022), 2023, 2024, 2025]
 
 
 def _aggregate_name(value: object) -> bool:
@@ -40,6 +46,100 @@ def _median(values: list[float]) -> float | None:
 
 def _percent(count: int, total: int) -> float | None:
     return None if total == 0 else count / total * 100
+
+
+def _sector_group(value: object) -> str:
+    if value in {"GRAN_MINERIA_CU", "ESTATAL_CU", "MEDIANA_MINERIA_CU"}:
+        return "COBRE"
+    if str(value).upper() == "ORO":
+        return "ORO"
+    return "OTROS"
+
+
+def recalculate_ols(transitions: pd.DataFrame) -> dict[str, float | int | None]:
+    """Rebuild the OLS design matrix and solve it directly with least squares."""
+    rows: list[dict[str, object]] = []
+    for row in transitions.itertuples(index=False):
+        values = (
+            row.project_id,
+            row.tasa_deriva,
+            row.condicion_prev,
+            row.capex_prev_real,
+            row.pem_prev,
+            row.ed_prev,
+            row.delta_pem,
+        )
+        if any(pd.isna(value) for value in values) or float(row.capex_prev_real) <= 0:
+            continue
+        rows.append(
+            {
+                "y": float(row.tasa_deriva),
+                "condicion": str(row.condicion_prev),
+                "sector": _sector_group(row.sector),
+                "log_capex": math.log(float(row.capex_prev_real)),
+                "horizonte": float(row.pem_prev) - float(row.ed_prev),
+            }
+        )
+    if not rows:
+        return {
+            "ols_coef_potencial": None,
+            "ols_coef_log_capex": None,
+            "ols_coef_horizonte": None,
+            "ols_n": 0,
+        }
+    conditions = sorted({str(row["condicion"]) for row in rows} - {"BASE"})
+    sectors = sorted({str(row["sector"]) for row in rows} - {"COBRE"})
+    matrix_rows: list[list[float]] = []
+    outcome: list[float] = []
+    for row in rows:
+        matrix_rows.append(
+            [1.0]
+            + [float(row["condicion"] == value) for value in conditions]
+            + [float(row["sector"] == value) for value in sectors]
+            + [float(row["log_capex"]), float(row["horizonte"])]
+        )
+        outcome.append(float(row["y"]))
+    coefficients, _, _, _ = np.linalg.lstsq(
+        np.asarray(matrix_rows, dtype=float),
+        np.asarray(outcome, dtype=float),
+        rcond=None,
+    )
+    potential_index = (
+        1 + conditions.index("POTENCIAL") if "POTENCIAL" in conditions else None
+    )
+    return {
+        "ols_coef_potencial": (
+            None if potential_index is None else float(coefficients[potential_index])
+        ),
+        "ols_coef_log_capex": float(coefficients[-2]),
+        "ols_coef_horizonte": float(coefficients[-1]),
+        "ols_n": len(rows),
+    }
+
+
+def _cif_at_six(
+    endpoints: list[dict[str, object]],
+) -> tuple[float | None, float | None]:
+    if not endpoints:
+        return None, None
+    survival = 1.0
+    cif_operation = 0.0
+    cif_exit = 0.0
+    for time in sorted({int(row["t"]) for row in endpoints if int(row["t"]) <= 6}):
+        at_risk = sum(int(row["t"]) >= time for row in endpoints)
+        events_operation = sum(
+            int(row["t"]) == time and int(row["evento"]) == 1
+            for row in endpoints
+        )
+        events_exit = sum(
+            int(row["t"]) == time and int(row["evento"]) == 2
+            for row in endpoints
+        )
+        prior_survival = survival
+        cif_operation += prior_survival * events_operation / at_risk
+        cif_exit += prior_survival * events_exit / at_risk
+        survival *= 1 - (events_operation + events_exit) / at_risk
+    return cif_operation, cif_exit
 
 
 def _recalculate(
@@ -73,13 +173,19 @@ def _recalculate(
 
     deltas: list[float] = []
     rates: list[float] = []
-    capex_changes: list[float] = []
+    comparable_capex = 0
+    unchanged_capex = 0
+    updated_nominal_changes: list[float] = []
+    updated_real_changes: list[float] = []
+    transition_rows: list[dict[str, object]] = []
     drift_by_project: dict[object, tuple[int, float | None]] = {}
+    project_histories: dict[object, tuple[pd.Series, pd.Series]] = {}
     transition_count = 0
     for project_id, group in panel.groupby("project_id", sort=False):
         rows = [row for _, row in group.sort_values("edicion", kind="stable").iterrows()]
         first = rows[0]
         last = rows[-1]
+        project_histories[project_id] = (first, last)
         accumulated = None
         if pd.notna(first["puesta_en_marcha"]) and pd.notna(last["puesta_en_marcha"]):
             accumulated = float(last["puesta_en_marcha"]) - float(
@@ -99,12 +205,46 @@ def _recalculate(
                     delta
                     / (int(following["edicion"]) - int(previous["edicion"]))
                 )
+                transition_delta: float | None = delta
+                transition_rate: float | None = delta / (
+                    int(following["edicion"]) - int(previous["edicion"])
+                )
+            else:
+                transition_delta = None
+                transition_rate = None
+            transition_rows.append(
+                {
+                    "project_id": project_id,
+                    "ed_prev": int(previous["edicion"]),
+                    "pem_prev": previous["puesta_en_marcha"],
+                    "delta_pem": transition_delta,
+                    "tasa_deriva": transition_rate,
+                    "capex_prev_real": previous["capex_real_2025"],
+                    "condicion_prev": previous["condicion"],
+                    "sector": previous["sector"],
+                }
+            )
+            prior_nominal = previous["inversion_mmusd"]
+            next_nominal = following["inversion_mmusd"]
             prior_capex = previous["capex_real_2025"]
             next_capex = following["capex_real_2025"]
-            if pd.notna(prior_capex) and pd.notna(next_capex) and float(prior_capex) != 0:
-                capex_changes.append(
-                    (float(next_capex) / float(prior_capex) - 1) * 100
-                )
+            if pd.notna(prior_nominal) and pd.notna(next_nominal):
+                comparable_capex += 1
+                if float(prior_nominal) == float(next_nominal):
+                    unchanged_capex += 1
+                else:
+                    if float(prior_nominal) != 0:
+                        updated_nominal_changes.append(
+                            (float(next_nominal) / float(prior_nominal) - 1) * 100
+                        )
+                    if (
+                        pd.notna(prior_capex)
+                        and pd.notna(next_capex)
+                        and float(prior_capex) != 0
+                    ):
+                        updated_real_changes.append(
+                            (float(next_capex) / float(prior_capex) - 1) * 100
+                        )
 
     project_outcomes = (
         projects.drop_duplicates("project_id").set_index("project_id")["desenlace"]
@@ -117,6 +257,53 @@ def _recalculate(
         and project_id in project_outcomes.index
         and project_outcomes.loc[project_id] == "entro_en_operacion"
     ]
+
+    next_edition = {
+        edition: DATA_EDITIONS[index + 1]
+        for index, edition in enumerate(DATA_EDITIONS[:-1])
+    }
+    project_reference = projects.drop_duplicates("project_id").set_index("project_id")
+    endpoints: list[dict[str, object]] = []
+    for project_id, (first, last) in project_histories.items():
+        outcome = str(project_reference.loc[project_id, "desenlace"])
+        first_edition = int(first["edicion"])
+        last_edition = int(last["edicion"])
+        if outcome == "vigente":
+            duration = 2025 - first_edition
+            event = 0
+        else:
+            duration = next_edition[last_edition] - first_edition
+            if outcome == "entro_en_operacion":
+                event = 1
+            elif outcome == "salio_sin_operar":
+                event = 2
+            else:
+                raise ValueError(f"desenlace desconocido para {project_id}: {outcome}")
+        if duration == 0:
+            continue
+        condition = first["condicion"]
+        if condition in {"BASE", "PROBABLE"}:
+            condition_group = "BASE_PROBABLE"
+        elif condition in {"POSIBLE", "POTENCIAL"}:
+            condition_group = "POSIBLE_POTENCIAL"
+        else:
+            condition_group = None
+        endpoints.append(
+            {
+                "first": first_edition,
+                "t": duration,
+                "evento": event,
+                "grupo": condition_group,
+            }
+        )
+    incident = [row for row in endpoints if int(row["first"]) >= 2015]
+    base_probable = [row for row in incident if row["grupo"] == "BASE_PROBABLE"]
+    possible_potential = [
+        row for row in incident if row["grupo"] == "POSIBLE_POTENCIAL"
+    ]
+    base_cif = _cif_at_six(base_probable)
+    possible_cif = _cif_at_six(possible_potential)
+    ols_values = recalculate_ols(pd.DataFrame(transition_rows))
 
     threshold = panel.loc[
         pd.to_numeric(panel["inversion_mmusd"], errors="coerce").ge(90)
@@ -148,7 +335,11 @@ def _recalculate(
         "pct_transiciones_atraso": _percent(sum(value > 0 for value in deltas), len(deltas)),
         "pct_transiciones_adelanto": _percent(sum(value < 0 for value in deltas), len(deltas)),
         "media_tasa_deriva": _mean(rates),
-        "mediana_delta_capex_real_pct": _median(capex_changes),
+        "pct_capex_sin_actualizar": _percent(unchanged_capex, comparable_capex),
+        "mediana_delta_capex_nom_pct_actualizados": _median(
+            updated_nominal_changes
+        ),
+        "mediana_delta_capex_real_pct_actualizados": _median(updated_real_changes),
         "pct_fiabilidad_a_tiempo": _percent(
             sum(value <= 0 for value in operated_drifts), len(operated_drifts)
         ),
@@ -158,6 +349,12 @@ def _recalculate(
         "mediana_deriva_acumulada_operados": _median(operated_drifts),
         "n_salidas_sin_operar": exits_without_operation,
         "n_salidas_operacion": exits_operation,
+        "n_cohorte_incidente": len(incident),
+        "cif_op_6_base_probable": base_cif[0],
+        "cif_sal_6_base_probable": base_cif[1],
+        "cif_op_6_posible_potencial": possible_cif[0],
+        "cif_sal_6_posible_potencial": possible_cif[1],
+        **ols_values,
     }
 
 
@@ -180,6 +377,9 @@ def verify_claims_register(
     verified: list[dict[str, object]] = []
     for claim in claims:
         item = dict(claim)
+        if item.get("estado") == "informativa":
+            verified.append(item)
+            continue
         recalculated = expected.get(str(item["id"]))
         item["valor_recalculado"] = recalculated
         item["estado"] = (

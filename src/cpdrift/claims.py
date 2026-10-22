@@ -24,12 +24,38 @@ def _percentage(series: pd.Series, comparison: str) -> float | None:
     return float(getattr(values, comparison)(0).mean() * 100)
 
 
-def build_claims_register(tables: IndicatorTables) -> list[dict[str, object]]:
+def _cif_value(table: pd.DataFrame, group: str, column: str) -> float | None:
+    row = table.loc[
+        table["cohorte"].eq("incidente")
+        & table["grupo"].eq(group)
+        & table["t"].eq(6)
+    ]
+    return None if row.empty else float(row.iloc[0][column])
+
+
+def _ols_value(table: pd.DataFrame, term: str) -> float | None:
+    row = table.loc[table["termino"].eq(term)]
+    return None if row.empty else float(row.iloc[0]["coef"])
+
+
+def build_claims_register(
+    tables: IndicatorTables,
+    cif: pd.DataFrame | None = None,
+    ols: pd.DataFrame | None = None,
+    logit: pd.DataFrame | None = None,
+) -> list[dict[str, object]]:
     """Build the auditable list of required headline figures."""
     transitions = tables.transiciones
     reliability = tables.fiabilidad
     entries = tables.entradas_salidas
-    values = {
+    comparable_capex = transitions.loc[
+        transitions["capex_prev_nom"].notna()
+        & transitions["capex_next_nom"].notna()
+    ]
+    updated_capex = comparable_capex.loc[
+        comparable_capex["capex_prev_nom"].ne(comparable_capex["capex_next_nom"])
+    ]
+    values: dict[str, object] = {
         "n_proyectos": len(tables.proyectos_deriva),
         "n_filas_agregadas_excluidas": tables.n_filas_agregadas_excluidas,
         "n_transiciones": len(transitions),
@@ -38,8 +64,21 @@ def build_claims_register(tables: IndicatorTables) -> list[dict[str, object]]:
         "pct_transiciones_atraso": _percentage(transitions["delta_pem"], "gt"),
         "pct_transiciones_adelanto": _percentage(transitions["delta_pem"], "lt"),
         "media_tasa_deriva": _stat(transitions["tasa_deriva"], "mean"),
-        "mediana_delta_capex_real_pct": _stat(
-            transitions["delta_capex_real_pct"], "median"
+        "pct_capex_sin_actualizar": (
+            None
+            if comparable_capex.empty
+            else float(
+                comparable_capex["capex_prev_nom"]
+                .eq(comparable_capex["capex_next_nom"])
+                .mean()
+                * 100
+            )
+        ),
+        "mediana_delta_capex_nom_pct_actualizados": _stat(
+            updated_capex["delta_capex_nom_pct"], "median"
+        ),
+        "mediana_delta_capex_real_pct_actualizados": _stat(
+            updated_capex["delta_capex_real_pct"], "median"
         ),
         "pct_fiabilidad_a_tiempo": reliability["pct_a_tiempo"],
         "pct_fiabilidad_1_anio": reliability["pct_hasta_1_anio"],
@@ -49,6 +88,38 @@ def build_claims_register(tables: IndicatorTables) -> list[dict[str, object]]:
         "n_salidas_sin_operar": int(entries["salidas_sin_operar"].sum()),
         "n_salidas_operacion": int(entries["salidas_operacion"].sum()),
     }
+    if cif is not None and ols is not None:
+        incident_total = cif.loc[
+            cif["cohorte"].eq("incidente") & cif["grupo"].eq("TOTAL")
+        ]
+        values.update(
+            {
+                "n_cohorte_incidente": (
+                    0
+                    if incident_total.empty
+                    else int(incident_total["en_riesgo"].max())
+                ),
+                "cif_op_6_base_probable": _cif_value(
+                    cif, "BASE_PROBABLE", "cif_op"
+                ),
+                "cif_sal_6_base_probable": _cif_value(
+                    cif, "BASE_PROBABLE", "cif_sal"
+                ),
+                "cif_op_6_posible_potencial": _cif_value(
+                    cif, "POSIBLE_POTENCIAL", "cif_op"
+                ),
+                "cif_sal_6_posible_potencial": _cif_value(
+                    cif, "POSIBLE_POTENCIAL", "cif_sal"
+                ),
+                "ols_coef_potencial": _ols_value(
+                    ols,
+                    'C(condicion_prev, Treatment("BASE"))[T.POTENCIAL]',
+                ),
+                "ols_coef_log_capex": _ols_value(ols, "log_capex"),
+                "ols_coef_horizonte": _ols_value(ols, "horizonte"),
+                "ols_n": 0 if ols.empty else int(ols.iloc[0]["n"]),
+            }
+        )
     metadata = {
         "n_proyectos": ("Proyectos no agregados", "proyectos", "Conteo de project_id no agregados."),
         "n_filas_agregadas_excluidas": (
@@ -86,10 +157,20 @@ def build_claims_register(tables: IndicatorTables) -> list[dict[str, object]]:
             "años por año",
             "Media de delta_pem dividida por gap_anios.",
         ),
-        "mediana_delta_capex_real_pct": (
-            "Variación mediana del capex real",
+        "pct_capex_sin_actualizar": (
+            "Transiciones sin actualización nominal de capex",
             "porcentaje",
-            "Mediana de la variación porcentual del capex real 2025.",
+            "Porcentaje con capex nominal final igual al inicial.",
+        ),
+        "mediana_delta_capex_nom_pct_actualizados": (
+            "Variación mediana del capex nominal actualizado",
+            "porcentaje",
+            "Mediana nominal solo donde el capex nominal cambia.",
+        ),
+        "mediana_delta_capex_real_pct_actualizados": (
+            "Variación mediana del capex real actualizado",
+            "porcentaje",
+            "Mediana real solo donde el capex nominal cambia.",
         ),
         "pct_fiabilidad_a_tiempo": (
             "Fiabilidad del año a tiempo",
@@ -116,8 +197,53 @@ def build_claims_register(tables: IndicatorTables) -> list[dict[str, object]]:
             "salidas",
             "Suma de salidas cuyo PEM previo no supera la edición siguiente.",
         ),
+        "n_cohorte_incidente": (
+            "Proyectos de la cohorte incidente",
+            "proyectos",
+            "Conteo con primera edición desde 2015 y tiempo positivo.",
+        ),
+        "cif_op_6_base_probable": (
+            "CIF de operación a seis años en BASE_PROBABLE",
+            "proporción",
+            "Estimación discreta para la cohorte incidente.",
+        ),
+        "cif_sal_6_base_probable": (
+            "CIF de salida a seis años en BASE_PROBABLE",
+            "proporción",
+            "Estimación discreta para la cohorte incidente.",
+        ),
+        "cif_op_6_posible_potencial": (
+            "CIF de operación a seis años en POSIBLE_POTENCIAL",
+            "proporción",
+            "Estimación discreta para la cohorte incidente.",
+        ),
+        "cif_sal_6_posible_potencial": (
+            "CIF de salida a seis años en POSIBLE_POTENCIAL",
+            "proporción",
+            "Estimación discreta para la cohorte incidente.",
+        ),
+        "ols_coef_potencial": (
+            "Coeficiente OLS para condición POTENCIAL",
+            "años por año",
+            "Coeficiente respecto de BASE en el modelo asociativo.",
+        ),
+        "ols_coef_log_capex": (
+            "Coeficiente OLS para log_capex",
+            "años por año",
+            "Coeficiente de log_capex en el modelo asociativo.",
+        ),
+        "ols_coef_horizonte": (
+            "Coeficiente OLS para horizonte",
+            "años por año",
+            "Coeficiente de horizonte en el modelo asociativo.",
+        ),
+        "ols_n": (
+            "Observaciones del modelo OLS",
+            "transiciones",
+            "Conteo de casos completos usados por OLS.",
+        ),
     }
-    return [
+    claims = [
         {
             "id": claim_id,
             "descripcion": metadata[claim_id][0],
@@ -127,3 +253,36 @@ def build_claims_register(tables: IndicatorTables) -> list[dict[str, object]]:
         }
         for claim_id, value in values.items()
     ]
+    if cif is not None:
+        interval_columns = ("ic_op_inf", "ic_op_sup", "ic_sal_inf", "ic_sal_sup")
+        for row in cif.loc[cif["t"].isin((2, 4, 6))].itertuples(index=False):
+            for column in interval_columns:
+                value = getattr(row, column)
+                claims.append(
+                    {
+                        "id": f"{column}_{row.cohorte}_{row.grupo}_{row.t}",
+                        "descripcion": (
+                            f"Intervalo bootstrap {column} para {row.cohorte}, "
+                            f"{row.grupo}, t={row.t}"
+                        ),
+                        "valor": None if pd.isna(value) else float(value),
+                        "unidad": "proporción",
+                        "calculo": "Percentil bootstrap por proyecto.",
+                        "estado": "informativa",
+                    }
+                )
+    if logit is not None:
+        for index, row in enumerate(logit.itertuples(index=False), start=1):
+            claims.append(
+                {
+                    "id": f"logit_or_{index}",
+                    "descripcion": f"Razón de odds para {row.termino}",
+                    "valor": float(row.coef),
+                    "unidad": "razón de odds",
+                    "calculo": (
+                        f"Modelo asociativo; IC 95 % [{row.ic_inf}, {row.ic_sup}]."
+                    ),
+                    "estado": "informativa",
+                }
+            )
+    return claims

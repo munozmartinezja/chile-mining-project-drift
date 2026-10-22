@@ -11,7 +11,9 @@ from .indicators import build_indicator_tables, write_indicator_tables
 from .match import assign_project_ids
 from .normalize import impute_regions, normalize_projects
 from .panel import write_outputs
+from .regression import fit_regressions_from_parquet, write_regressions
 from .report import build_report, write_report
+from .survival import build_cif_from_parquet, write_cif
 from .verify import require_verified, verify_claims_register, write_claims_register
 
 RAW_DIR = Path("data/raw")
@@ -54,8 +56,19 @@ def main() -> None:
     indicators = build_indicator_tables(panel_df, projects_df, CPI_PATH)
     write_indicator_tables(indicators, INTERIM_DIR)
 
+    print("Estimando modelos asociativos…")
+    cif = build_cif_from_parquet(INTERIM_DIR / "proyectos_deriva.parquet")
+    write_cif(cif, INTERIM_DIR)
+    regressions = fit_regressions_from_parquet(INTERIM_DIR / "transiciones.parquet")
+    write_regressions(regressions, INTERIM_DIR)
+
     print("Verificando cifras…")
-    claims = build_claims_register(indicators)
+    claims = build_claims_register(
+        indicators,
+        cif=cif,
+        ols=regressions.ols,
+        logit=regressions.logit,
+    )
     verified_claims = verify_claims_register(
         claims,
         INTERIM_DIR / "panel.parquet",
@@ -72,6 +85,11 @@ def main() -> None:
         projects=projects_df.to_dict("records"),
         unknowns=unknowns,
         indicators=verified_claims,
+        models={
+            "cif": cif.to_dict("records"),
+            "ols": regressions.ols.to_dict("records"),
+            "logit": regressions.logit.to_dict("records"),
+        },
     )
     md_path, json_path = write_report(report, INTERIM_DIR)
 
