@@ -1,8 +1,10 @@
-"""Build the Sprint 2 JSON evidence and matching Markdown report."""
+"""Build the diagnostic JSON evidence and matching Markdown report."""
 
 from __future__ import annotations
 
 import json
+import math
+from numbers import Real
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +18,18 @@ DECISIONES = [
 ]
 
 
+def _json_safe(value: object) -> object:
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, Real) and not math.isfinite(float(value)):
+        return None
+    if not isinstance(value, (str, bool)) and value is not None and pd.isna(value):
+        return None
+    return value
+
+
 def build_report(
     editions: list[dict[str, Any]],
     identity: list[dict[str, Any]],
@@ -23,6 +37,7 @@ def build_report(
     unknowns: dict[str, list[str]],
     decisions: list[dict[str, Any]] | None = None,
     indicators: list[dict[str, Any]] | None = None,
+    models: dict[str, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     outcomes: dict[str, int] = {}
     reentries = 0
@@ -37,6 +52,7 @@ def build_report(
         "desenlaces": {"categorias": outcomes, "reingresos": reentries},
         "catalogos": unknowns,
         "indicadores": [] if indicators is None else indicators,
+        "modelos": {"cif": [], "ols": [], "logit": []} if models is None else models,
         "decisiones_tomadas": DECISIONES if decisions is None else decisions,
     }
 
@@ -55,9 +71,12 @@ def _table(headers: list[str], rows: list[list[object]]) -> str:
 
 def write_report(report: dict[str, Any], interim_dir: Path) -> tuple[Path, Path]:
     interim_dir.mkdir(parents=True, exist_ok=True)
-    json_path = interim_dir / "sprint2_reporte.json"
-    md_path = interim_dir / "sprint2_reporte.md"
-    json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    json_path = interim_dir / "diagnostico.json"
+    md_path = interim_dir / "diagnostico.md"
+    json_path.write_text(
+        json.dumps(_json_safe(report), ensure_ascii=False, indent=2, allow_nan=False),
+        encoding="utf-8",
+    )
     reconciliation = _table(
         ["Edición", "Filas", "Declarados", "Suma", "Total", "Estado", "Umbral"],
         [
@@ -84,6 +103,42 @@ def write_report(report: dict[str, Any], interim_dir: Path) -> tuple[Path, Path]
         [
             [item["descripcion"], item["valor"], item["unidad"], item["estado"]]
             for item in report["indicadores"]
+            if item["estado"] != "informativa"
+        ],
+    )
+    models = report["modelos"]
+    cif = _table(
+        ["Cohorte", "Grupo", "t", "CIF operación", "CIF salida"],
+        [
+            [
+                item["cohorte"],
+                item["grupo"],
+                item["t"],
+                item["cif_op"],
+                item["cif_sal"],
+            ]
+            for item in models["cif"]
+            if item["t"] in {2, 4, 6}
+        ],
+    )
+    ols = _table(
+        ["Término", "Coeficiente", "EE", "IC inferior", "IC superior", "p", "n", "R²"],
+        [
+            [
+                item["termino"], item["coef"], item["ee"], item["ic_inf"],
+                item["ic_sup"], item["p"], item["n"], item["r2"],
+            ]
+            for item in models["ols"]
+        ],
+    )
+    logit = _table(
+        ["Término", "Razón de odds", "EE", "IC inferior", "IC superior", "p", "n", "Pseudo-R²"],
+        [
+            [
+                item["termino"], item["coef"], item["ee"], item["ic_inf"],
+                item["ic_sup"], item["p"], item["n"], item["pseudo_r2"],
+            ]
+            for item in models["logit"]
         ],
     )
     text = (
@@ -94,6 +149,13 @@ def write_report(report: dict[str, Any], interim_dir: Path) -> tuple[Path, Path]
         )
         + f"\n- reingresos: {outcomes['reingresos']}\n\n## Indicadores\n\n"
         + indicators
+        + "\n\n## Modelos\n\nresultados asociativos.\n\n"
+        + "### Incidencia acumulada\n\n"
+        + cif
+        + "\n\n### OLS\n\n"
+        + ols
+        + "\n\n### Logit\n\n"
+        + logit
         + "\n\n## Catálogos desconocidos\n\n"
         + "\n".join(f"- {key}: {values}" for key, values in report["catalogos"].items())
         + "\n\n## Decisiones tomadas\n\n"
