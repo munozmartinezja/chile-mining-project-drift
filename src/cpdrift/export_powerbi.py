@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from .etiquetas import add_export_labels
+
 COPPER_SECTORS = {"GRAN_MINERIA_CU", "ESTATAL_CU", "MEDIANA_MINERIA_CU"}
 
 
@@ -58,6 +60,7 @@ def export_powerbi(
     date_rule_matrix: pd.DataFrame,
     copper_prices: pd.DataFrame,
     claims: list[dict[str, object]],
+    visual_tables: dict[str, pd.DataFrame] | None = None,
 ) -> list[Path]:
     """Write the anonymous publication tables as comma-separated UTF-8 files."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -77,6 +80,7 @@ def export_powerbi(
     ]
     dimension = projects[project_columns].copy()
     dimension.insert(2, "grupo_sector", dimension["sector"].map(_sector_group))
+    dimension = add_export_labels("dim_proyecto", dimension)
     identifier_map = projects.set_index("project_id")["id_publico"]
     if transitions.empty:
         fact_transition = pd.DataFrame(
@@ -100,15 +104,20 @@ def export_powerbi(
                 "delta_capex_real_pct", "capex_actualizado",
             ]
         ]
+    fact_transition = add_export_labels("fact_transicion", fact_transition)
     register = pd.DataFrame(claims)
     register_columns = ["id", "descripcion", "valor", "unidad", "estado"]
     register = register.reindex(columns=register_columns)
     exports: dict[str, pd.DataFrame] = {
         "dim_proyecto": dimension,
-        "fact_trayectoria": descriptive["trayectorias"],
+        "fact_trayectoria": add_export_labels(
+            "fact_trayectoria", descriptive["trayectorias"]
+        ),
         "fact_transicion": fact_transition,
-        "cif": cif,
-        "conciliacion_desenlaces": reconciliation,
+        "cif": add_export_labels("cif", cif),
+        "conciliacion_desenlaces": add_export_labels(
+            "conciliacion_desenlaces", reconciliation
+        ),
         "validacion_cortes": validation_cuts,
         "validacion_agregada": validation_aggregate,
         "calibracion_agregada": aggregate_calibration,
@@ -118,8 +127,13 @@ def export_powerbi(
         "registro_cifras": register,
     }
     exports.update(
-        {name: table for name, table in descriptive.items() if name.startswith("desc_")}
+        {
+            name: add_export_labels(name, table)
+            for name, table in descriptive.items()
+            if name.startswith("desc_")
+        }
     )
+    exports.update({} if visual_tables is None else visual_tables)
     paths = []
     for name, table in exports.items():
         _ensure_anonymous(table, raw_names, name)

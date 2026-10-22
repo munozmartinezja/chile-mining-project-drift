@@ -89,6 +89,12 @@ def test_successive_cuts_use_only_prior_rows(monkeypatch) -> None:
     result = build_successive_validation(data, bootstrap_replicates=10)
     assert set(result.cortes["corte"]) == {2018, 2019, 2020, 2021, 2023, 2024}
     assert all(train_max < test_min for train_max, test_min in seen)
+    assert pd.isna(
+        result.agregada.set_index("modelo").loc["prevalencia", "auc"]
+    )
+    assert result.cortes.loc[
+        result.cortes["modelo"].eq("prevalencia"), "auc"
+    ].isna().all()
 
 
 def test_project_resampling_keeps_each_projects_rows_together() -> None:

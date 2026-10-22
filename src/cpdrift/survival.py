@@ -135,16 +135,17 @@ def _bootstrap_intervals(
     endpoints: pd.DataFrame,
     replicates: int,
     rng: np.random.Generator,
+    horizons: tuple[int, ...] | list[int],
 ) -> dict[int, tuple[float, float, float, float]]:
     if endpoints.empty or replicates <= 0:
         return {}
-    operation: dict[int, list[float]] = {time: [] for time in HORIZONS}
-    exits: dict[int, list[float]] = {time: [] for time in HORIZONS}
+    operation: dict[int, list[float]] = {time: [] for time in horizons}
+    exits: dict[int, list[float]] = {time: [] for time in horizons}
     for _ in range(replicates):
         positions = rng.integers(0, len(endpoints), size=len(endpoints))
         sample = endpoints.iloc[positions].reset_index(drop=True)
-        curve = estimate_cif(sample, HORIZONS).set_index("t")
-        for time in HORIZONS:
+        curve = estimate_cif(sample, horizons).set_index("t")
+        for time in horizons:
             operation[time].append(float(curve.loc[time, "cif_op"]))
             exits[time].append(float(curve.loc[time, "cif_sal"]))
     return {
@@ -154,7 +155,7 @@ def _bootstrap_intervals(
             float(np.percentile(exits[time], 2.5)),
             float(np.percentile(exits[time], 97.5)),
         )
-        for time in HORIZONS
+        for time in horizons
     }
 
 
@@ -192,6 +193,7 @@ def build_cif_table(
             group,
             bootstrap_replicates,
             np.random.default_rng([seed, stream_index]),
+            tuple(int(value) for value in curve["t"]),
         )
         for column in ("ic_op_inf", "ic_op_sup", "ic_sal_inf", "ic_sal_sup"):
             curve[column] = np.nan

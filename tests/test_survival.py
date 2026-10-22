@@ -131,6 +131,49 @@ def test_bootstrap_changes_with_another_seed() -> None:
     assert not first[columns].equals(second[columns])
 
 
+def test_bootstrap_intervals_cover_every_curve_time_and_preserve_published_values() -> None:
+    rows = []
+    for prefix, conditions in (
+        ("B", ("BASE", "PROBABLE")),
+        ("P", ("POSIBLE", "POTENCIAL")),
+    ):
+        for index in range(20):
+            rows.append(
+                project(
+                    f"{prefix}{index}",
+                    2015,
+                    2016 + index % 6,
+                    ("entro_en_operacion", "salio_sin_operar", "vigente")[index % 3],
+                    conditions[index % 2],
+                )
+            )
+    table = build_cif_table(pd.DataFrame(rows))
+    assert table[["ic_op_inf", "ic_op_sup", "ic_sal_inf", "ic_sal_sup"]].notna().all().all()
+    expected = {
+        ("BASE_PROBABLE", 4): (0.05, 0.4, 0.05, 0.35000000000000003),
+        ("BASE_PROBABLE", 6): (0.15, 0.55, 0.15, 0.55),
+        ("POSIBLE_POTENCIAL", 4): (
+            0.05,
+            0.4,
+            0.049999999999999996,
+            0.39999999999999997,
+        ),
+        ("POSIBLE_POTENCIAL", 6): (0.15000000000000002, 0.55, 0.15, 0.55),
+    }
+    selected = table.loc[
+        table["cohorte"].eq("incidente")
+        & table["grupo"].isin({"BASE_PROBABLE", "POSIBLE_POTENCIAL"})
+        & table["t"].isin({4, 6})
+    ]
+    for row in selected.itertuples(index=False):
+        assert (
+            row.ic_op_inf,
+            row.ic_op_sup,
+            row.ic_sal_inf,
+            row.ic_sal_sup,
+        ) == expected[(row.grupo, row.t)]
+
+
 def test_write_source_does_not_require_pdf(tmp_path: Path) -> None:
     projects = pd.DataFrame([project("A", 2015, 2025, "vigente")])
     table = build_cif_table(projects, bootstrap_replicates=2)

@@ -504,3 +504,33 @@ def test_altered_descriptive_claim_is_detected(tmp_path: Path) -> None:
     )
     state = next(item["estado"] for item in verified if item["id"] == "pct_atraso_base")
     assert state == "fallida"
+
+
+def test_altered_year_four_dashboard_claim_is_detected(tmp_path: Path) -> None:
+    rows = []
+    projects = []
+    for index in range(10):
+        project_id = f"P{index}"
+        for edition, pem in ((2018, 2020), (2022, 2020 + index)):
+            rows.append(
+                {"project_id": project_id, "edicion": edition, "nombre_norm": project_id, "puesta_en_marcha": pem, "inversion_mmusd": 100, "condicion": "BASE", "sector": "Oro", "region": "Atacama"}
+            )
+        projects.append({"project_id": project_id, "desenlace": "vigente"})
+    panel_path = tmp_path / "panel.parquet"
+    projects_path = tmp_path / "projects.parquet"
+    cpi_path = tmp_path / "cpi.csv"
+    pd.DataFrame(rows).to_parquet(panel_path, index=False)
+    pd.DataFrame(projects).to_parquet(projects_path, index=False)
+    pd.DataFrame({"anio": [2018, 2022, 2025], "s1": [100, 100, 100], "s2": [100, 100, 100]}).to_csv(cpi_path, index=False)
+    claims = [
+        {"id": "mediana_deriva_anio4", "valor": 99.0},
+        {"id": "p90_deriva_anio4", "valor": 8.1},
+        {"id": "n_proyectos_anio4", "valor": 10},
+        {"id": "n_cifras_verificadas", "valor": 3},
+    ]
+    verified = verify_claims_register(claims, panel_path, projects_path, cpi_path)
+    states = {item["id"]: item["estado"] for item in verified}
+    assert states["mediana_deriva_anio4"] == "fallida"
+    assert states["p90_deriva_anio4"] == "verificada"
+    assert states["n_proyectos_anio4"] == "verificada"
+    assert states["n_cifras_verificadas"] == "fallida"
