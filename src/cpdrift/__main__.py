@@ -5,6 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from .claims import build_claims_register
+from .conciliacion import (
+    build_reconciliation,
+    load_reconciliation_references,
+    require_reconciled,
+    verify_citations,
+    write_reconciliation,
+)
 from .declared import extract_declared_all
 from .extract import apply_extraction_corrections, extract_all
 from .indicators import build_indicator_tables, write_indicator_tables
@@ -22,6 +29,7 @@ MANUAL_PATH = Path("data/reference/cruce_manual.csv")
 REVISION_PATH = INTERIM_DIR / "revision_cruce.csv"
 CORRECTIONS_PATH = Path("data/reference/correcciones_extraccion.csv")
 CPI_PATH = Path("data/reference/cpi_us_semestral.csv")
+REFERENCE_DIR = Path("data/reference")
 
 
 def main() -> None:
@@ -49,11 +57,22 @@ def main() -> None:
     }
     panel["umbral_edicion"] = panel["edicion"].map(threshold_by_edition)
 
+    print("Conciliando desenlaces…")
+    outcome_references = load_reconciliation_references(REFERENCE_DIR)
+    verify_citations(outcome_references, RAW_DIR)
+    outcome_reconciliation = build_reconciliation(panel, outcome_references)
+    require_reconciled(outcome_reconciliation)
+    write_reconciliation(outcome_reconciliation, INTERIM_DIR)
+
     print("Escribiendo parquets…")
-    panel_df, projects_df = write_outputs(panel, INTERIM_DIR)
+    panel_df, projects_df = write_outputs(
+        panel, INTERIM_DIR, outcome_references.egresos
+    )
 
     print("Calculando indicadores…")
-    indicators = build_indicator_tables(panel_df, projects_df, CPI_PATH)
+    indicators = build_indicator_tables(
+        panel_df, projects_df, CPI_PATH, outcome_references.egresos
+    )
     write_indicator_tables(indicators, INTERIM_DIR)
 
     print("Estimando modelos asociativos…")
@@ -68,12 +87,16 @@ def main() -> None:
         cif=cif,
         ols=regressions.ols,
         logit=regressions.logit,
+        projects=projects_df,
+        egresos=outcome_references.egresos,
+        conciliacion=outcome_reconciliation,
     )
     verified_claims = verify_claims_register(
         claims,
         INTERIM_DIR / "panel.parquet",
         INTERIM_DIR / "proyectos.parquet",
         CPI_PATH,
+        REFERENCE_DIR / "egresos_declarados.csv",
     )
     write_claims_register(verified_claims, INTERIM_DIR / "claims.json")
     require_verified(verified_claims)
@@ -90,6 +113,7 @@ def main() -> None:
             "ols": regressions.ols.to_dict("records"),
             "logit": regressions.logit.to_dict("records"),
         },
+        outcome_reconciliation=outcome_reconciliation.to_dict("records"),
     )
     md_path, json_path = write_report(report, INTERIM_DIR)
 

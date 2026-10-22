@@ -20,6 +20,7 @@ def appearance(
     return {
         "project_id": project_id,
         "edicion": edition,
+        "proyecto_raw": project_id,
         "nombre_norm": name or project_id,
         "puesta_en_marcha": pem,
         "inversion_mmusd": capex,
@@ -53,16 +54,20 @@ def test_aggregates_deflator_transitions_and_single_appearance(tmp_path: Path) -
             appearance("P2", 2023, pem=2031, capex=90),
             appearance("A1", 2023, name="OTROS PROYECTOS", capex=500),
             appearance("A2", 2023, name="CARTERA PROYECTOS DE INFORMACION", capex=600),
+            appearance("A3", 2023, name="PROYECTOS FURE", capex=700),
+            appearance("A4", 2023, name="TRANQUES", capex=800),
         ]
     )
-    projects = pd.DataFrame([project("P1"), project("P2"), project("A1"), project("A2")])
+    projects = pd.DataFrame(
+        [project("P1"), project("P2"), project("A1"), project("A2"), project("A3"), project("A4")]
+    )
     bundle = build_indicator_tables(
         panel,
         projects,
         cpi_file(tmp_path, {2021: 100, 2023: 150, 2025: 200}),
     )
 
-    assert bundle.n_filas_agregadas_excluidas == 2
+    assert bundle.n_filas_agregadas_excluidas == 4
     transition = bundle.transiciones.iloc[0]
     assert transition["ed_prev"] == 2021
     assert transition["ed_next"] == 2023
@@ -128,10 +133,33 @@ def test_entries_and_exits_use_homogeneous_threshold(tmp_path: Path) -> None:
     )
     ids = panel["project_id"].unique()
     projects = pd.DataFrame([project(value, reentry=value == "R") for value in ids])
+    exits = pd.DataFrame(
+        [
+            {
+                "edicion_desde": 2020,
+                "edicion_hasta": 2021,
+                "proyecto_raw": "A",
+                "motivo": "operacion",
+            },
+            {
+                "edicion_desde": 2020,
+                "edicion_hasta": 2021,
+                "proyecto_raw": "B",
+                "motivo": "reestructuracion",
+            },
+            {
+                "edicion_desde": 2020,
+                "edicion_hasta": 2021,
+                "proyecto_raw": "R",
+                "motivo": "reestructuracion",
+            },
+        ]
+    )
     bundle = build_indicator_tables(
         panel,
         projects,
         cpi_file(tmp_path, {2020: 100, 2021: 110, 2023: 150, 2025: 200}),
+        exits,
     )
 
     first, second = bundle.entradas_salidas.to_dict("records")

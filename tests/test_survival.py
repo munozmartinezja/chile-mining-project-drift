@@ -70,6 +70,17 @@ def test_endpoint_rules_exclude_zero_and_use_next_data_edition() -> None:
     assert endpoints.loc["CURRENT", "evento"] == 0
 
 
+def test_censored_outcome_is_censored_at_last_appearance() -> None:
+    projects = pd.DataFrame(
+        [project("CENSORED", 2018, 2021, "censurado")]
+    )
+
+    endpoint = prepare_survival_endpoints(projects).iloc[0]
+
+    assert endpoint["t"] == 3
+    assert endpoint["evento"] == 0
+
+
 def test_incident_cohort_excludes_projects_starting_in_2014() -> None:
     projects = pd.DataFrame(
         [

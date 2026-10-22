@@ -1,0 +1,34 @@
+edicion,par_desde,categoria,n_declarado,capex_mmusd,pagina,frase
+2015,2014,entraron_operacion,6,7587,50,6 PROYECTOS QUE ENTRARON EN OPERACIÓN 7.587
+2015,2014,reestructuracion,10,28223,50,10 PROYECTOS QUE SALEN DE LA CARTERA POR REESTRUCTURACIÓN 28.223
+2015,2014,nuevos,5,5580,50,5 PROYECTOS NUEVOS QUE SE INCORPORAN A LA CARTERA 2014 --- 5.580
+2016,2015,entraron_operacion,3,6251,30,Proyectos que entraron en operación 2016 3 6.251
+2016,2015,reestructuracion,8,22727,30,Proyectos que salen de la cartera por reestructuración 2016 8 22.727
+2016,2015,nuevos,6,4601,30,Proyectos nuevos que se incorporan a la cartera 6 0 4.601
+2017,2016,entraron_operacion,2,511,32,Proyectos que entraron en operación 2 511
+2017,2016,reestructuracion,1,344,32,Proyectos que salen de la cartera por reestructuración 1 344
+2017,2016,nuevos,11,12482,32,Proyectos nuevos que se incorporan a la cartera 11 0 12.482
+2018,2017,entraron_operacion,7,2286,37,Proyectos que entraron en operación 7 2.286
+2018,2017,reestructuracion,2,776,37,Proyectos que salen de la cartera por reestructuración 2 776
+2018,2017,nuevos,6,5902,37,Proyectos nuevos que se incorporan a la cartera 6 0 5.902
+2019,2018,entraron_operacion,4,6394,35,Proyectos que entraron en operación 4 6.394
+2019,2018,reestructuracion,1,230,35,Proyectos que salen de la cartera por reestructuración 1 230
+2019,2018,nuevos,5,7209,35,Proyectos nuevos que se incorporan a la cartera 5 0 7.209
+2020,2019,entraron_operacion,0,0,36,Proyectos que entraron en operación 0 0
+2020,2019,reestructuracion,0,0,36,Proyectos que salen de la cartera por reestructuración 0 0
+2020,2019,nuevos,5,2195,36,Proyectos nuevos que se incorporan a la cartera 5 0 2.195
+2021,2020,entraron_operacion,2,3392,36,Proyectos que entraron en operación 2 3 .392
+2021,2020,reestructuracion,1,3225,36,Proyectos que salen de la cartera por reestructuración 1 3 .225
+2021,2020,nuevos,5,2522,36,Proyectos nuevos que se incorporan a la cartera 5 - 2.522
+2022,2021,entraron_operacion,5,2482,32,Proyectos que entraron en operación 5 2.482
+2022,2021,reestructuracion,2,1095,32,Proyectos que salen de la cartera por reestructuración 2 1.095
+2022,2021,nuevos,9,4388,32,Proyectos nuevos que se incorporan a la cartera 9 - 4.388
+2023,2022,entraron_operacion,6,7770,23,6 7.770 - - 7.770
+2023,2022,reestructuracion,4,12691,23,4 12.691 - - 12.691
+2023,2022,nuevos,6,6307,23,6 - 6.307 6.307
+2024,2023,entraron_operacion,5,4569,29,Proyectos que entraron en Operación en 2024 5 4.569
+2024,2023,reestructuracion,4,3854,29,4 3.854 - -3.854
+2024,2023,nuevos,9,10130,29,Proyectos nuevos que se incorporan a la cartera 9 - 10.130
+2025,2024,entraron_operacion,5,4011,Tabla 2 -3,Proyectos que salen de la cartera por estar ya ejecutados.
+2025,2024,metodologia,1,30,Tabla 2 -3,Proyectos que salen por estar fuera del alcance del informe.
+2025,2024,nuevos,16,26561,Tabla 2 -3,Proyectos que Ingresan a la Cartera de Inversión para el Período 2025-2034.

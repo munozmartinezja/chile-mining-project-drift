@@ -32,12 +32,29 @@ CITATIONS = (
 )
 
 
-def _normalized_citation(text: str) -> str:
+def normalize_citation(text: str) -> str:
+    """Normalize citation text without changing digits or punctuation."""
     decomposed = unicodedata.normalize("NFD", text.casefold())
     without_accents = "".join(
         character for character in decomposed if not unicodedata.combining(character)
     )
     return re.sub(r"\s+", " ", without_accents).strip()
+
+
+def citation_in_pages(
+    pages: list[str], phrase: str, page_number: int
+) -> tuple[bool, list[int]]:
+    """Search a normalized citation on its page and adjacent pages."""
+    searched = [
+        candidate
+        for candidate in (page_number - 1, page_number, page_number + 1)
+        if 1 <= candidate <= len(pages)
+    ]
+    expected = normalize_citation(phrase)
+    found = any(
+        expected in normalize_citation(pages[item - 1]) for item in searched
+    )
+    return found, searched
 
 
 def _optional_value(value: object) -> int | float | None:
@@ -78,17 +95,8 @@ def _citation_finding(
         status = "sin_pdf"
         searched: list[int] = []
     else:
-        searched = [
-            candidate
-            for candidate in (page_number - 1, page_number, page_number + 1)
-            if 1 <= candidate <= len(pages)
-        ]
-        expected = _normalized_citation(phrase)
-        status = (
-            "verificada"
-            if any(expected in _normalized_citation(pages[item - 1]) for item in searched)
-            else "no_encontrada"
-        )
+        found, searched = citation_in_pages(pages, phrase, page_number)
+        status = "verificada" if found else "no_encontrada"
     return {
         "valor": _optional_value(value),
         "cita": phrase,
