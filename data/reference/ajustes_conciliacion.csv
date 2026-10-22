@@ -1,0 +1,6 @@
+edicion_desde,edicion_hasta,categoria,delta_n,delta_capex,nota
+2021,2023,entraron_operacion,1,,"par de dos años: el cuadro suma 2022 y 2023; Esperanza Sur ingresó y salió dentro del intervalo (sin edición 2022); capex de 2022 no comparable"
+2021,2023,reestructuracion,0,,"Cochilco cuenta Nueva Unión como uno (nosotros dos fases); una salida de 2023 corresponde a un proyecto incorporado en 2022 (no observado); capex no comparable"
+2021,2023,nuevos,0,,"par de dos años: suma de nuevos 2022 y 2023; capex de 2022 no comparable"
+2023,2024,reestructuracion,1,669,"el cuadro cuenta Proyectos FURE (fila agregada de Codelco, excluida del panel)"
+2023,2024,nuevos,-2,-5529,"el cuadro excluye Codelco (Nuevas Fases Chuquicamata Subterránea 4.429 y Paloma fase II 1.100); el texto declara 11 proyectos y US$ 15.659 millones"
