@@ -15,7 +15,15 @@ from .conciliacion import (
     write_reconciliation,
 )
 from .declared import extract_declared_all
-from .descriptivo import build_descriptive_tables, write_descriptive_tables
+from .descriptivo import (
+    build_descriptive_tables,
+    build_fan_table,
+    build_reconciliation_matrix,
+    build_sensitivity_potential,
+    build_ten_table,
+    write_descriptive_tables,
+    write_visual_tables,
+)
 from .export_powerbi import export_powerbi
 from .extract import apply_extraction_corrections, extract_all
 from .indicators import build_indicator_tables, write_indicator_tables
@@ -134,6 +142,15 @@ def main() -> None:
     write_sensitivity(sensitivity, INTERIM_DIR)
     date_rule = build_date_rule_check(panel_df, outcome_references.egresos)
     write_date_rule_check(date_rule, INTERIM_DIR)
+    visual_tables = {
+        "viz_abanico": build_fan_table(descriptive["trayectorias"]),
+        "viz_de_cada_10": build_ten_table(cif),
+        "viz_sensibilidad_potencial": build_sensitivity_potential(sensitivity),
+        "viz_conciliacion_matriz": build_reconciliation_matrix(
+            outcome_reconciliation
+        ),
+    }
+    write_visual_tables(visual_tables, INTERIM_DIR)
 
     print("Verificando cifras…")
     claims = build_claims_register(
@@ -150,6 +167,7 @@ def main() -> None:
         validacion_agregada=successive_validation.agregada,
         validacion_bootstrap=successive_validation.bootstrap,
         descriptivas=descriptive,
+        visuales=visual_tables,
         sensibilidad=sensitivity,
         regla_fecha=date_rule.detalle,
     )
@@ -220,6 +238,7 @@ def main() -> None:
         date_rule_matrix=date_rule.matriz,
         copper_prices=copper_prices,
         claims=verified_claims,
+        visual_tables=visual_tables,
     )
 
     if REVISION_PATH.exists():

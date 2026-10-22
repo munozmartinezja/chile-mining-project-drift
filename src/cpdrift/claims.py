@@ -68,6 +68,7 @@ def build_claims_register(
     validacion_agregada: pd.DataFrame | None = None,
     validacion_bootstrap: dict[str, float] | None = None,
     descriptivas: dict[str, pd.DataFrame] | None = None,
+    visuales: dict[str, pd.DataFrame] | None = None,
     sensibilidad: pd.DataFrame | None = None,
     regla_fecha: pd.DataFrame | None = None,
 ) -> list[dict[str, object]]:
@@ -348,6 +349,17 @@ def build_claims_register(
             if regla_fecha.empty
             else float(regla_fecha["discrepante"].mean() * 100)
         )
+    if visuales is not None:
+        year_four = visuales["viz_abanico"].loc[
+            visuales["viz_abanico"]["anios_desde_primera"].eq(4)
+        ]
+        values.update(
+            {
+                "mediana_deriva_anio4": None if year_four.empty else float(year_four.iloc[0]["mediana"]),
+                "p90_deriva_anio4": None if year_four.empty else float(year_four.iloc[0]["p90"]),
+                "n_proyectos_anio4": None if year_four.empty else int(year_four.iloc[0]["n_proyectos"]),
+            }
+        )
     metadata = {
         "n_proyectos": ("Proyectos no agregados", "proyectos", "Conteo de project_id no agregados."),
         "n_filas_agregadas_excluidas": (
@@ -527,7 +539,7 @@ def build_claims_register(
     ]
     if cif is not None:
         interval_columns = ("ic_op_inf", "ic_op_sup", "ic_sal_inf", "ic_sal_sup")
-        for row in cif.loc[cif["t"].isin((2, 4, 6))].itertuples(index=False):
+        for row in cif.itertuples(index=False):
             for column in interval_columns:
                 value = getattr(row, column)
                 public_id = f"{column}_{row.t}_{str(row.grupo).lower()}"
@@ -565,4 +577,14 @@ def build_claims_register(
                     "estado": "informativa",
                 }
             )
+    verified_count = sum(item.get("estado") != "informativa" for item in claims)
+    claims.append(
+        {
+            "id": "n_cifras_verificadas",
+            "descripcion": "Cifras verificadas",
+            "valor": verified_count,
+            "unidad": "cifras",
+            "calculo": "Conteo de cifras verificables, excluida esta misma.",
+        }
+    )
     return claims

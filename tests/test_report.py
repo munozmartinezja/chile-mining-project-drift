@@ -87,6 +87,28 @@ def test_report_json_replaces_non_finite_model_values(tmp_path: Path) -> None:
     assert saved["modelos"]["cif"][0]["ic_op_sup"] is None
 
 
+def test_report_renders_prevalence_auc_as_missing(tmp_path: Path) -> None:
+    report = build_report(
+        [],
+        [],
+        [],
+        {"sector": [], "tipo_proyecto": [], "etapa": []},
+        aggregate_validation=[
+            {
+                "modelo": "prevalencia",
+                "auc": math.nan,
+                "brier": 0.25,
+                "calibracion": 0.0,
+                "n_test": 10,
+            }
+        ],
+    )
+    markdown_path, json_path = write_report(report, tmp_path)
+    assert "| prevalencia | — | 0.25 |" in markdown_path.read_text(encoding="utf-8")
+    saved = json.loads(json_path.read_text(encoding="utf-8"))
+    assert saved["validacion_agregada"][0]["auc"] is None
+
+
 def test_report_includes_outcome_reconciliation_and_sources(tmp_path: Path) -> None:
     report = build_report(
         [],

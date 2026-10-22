@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
+from .etiquetas import CATEGORY_LABELS, GROUP_LABELS
 from .indicators import load_annual_cpi
 
 AGGREGATE_PREFIX = "OTROS"
@@ -163,6 +165,7 @@ def build_descriptive_tables(
             "capex_real_2025": "capex_real",
         }
     )[["id_publico", "edicion", "pem", "capex_real", "condicion"]]
+    trajectories = enrich_trajectories(trajectories)
     cohort = (
         project_drift.groupby(["primera_edicion", "desenlace"], dropna=False)
         .size()
@@ -193,6 +196,84 @@ def write_descriptive_tables(
     tables: dict[str, pd.DataFrame], interim_dir: Path
 ) -> None:
     """Write every descriptive table as parquet."""
+    interim_dir.mkdir(parents=True, exist_ok=True)
+    for name, table in tables.items():
+        table.to_parquet(interim_dir / f"{name}.parquet", index=False)
+
+
+def enrich_trajectories(table: pd.DataFrame) -> pd.DataFrame:
+    """Add time and launch-year drift relative to each project's first row."""
+    result = table.sort_values(["id_publico", "edicion"], kind="stable").copy()
+    first_edition = result.groupby("id_publico")["edicion"].transform(
+        lambda values: values.iloc[0]
+    )
+    first_pem = result.groupby("id_publico")["pem"].transform(
+        lambda values: values.iloc[0]
+    )
+    result["anios_desde_primera"] = result["edicion"] - first_edition
+    result["deriva_desde_primera"] = result["pem"] - first_pem
+    return result
+
+
+def build_fan_table(trajectories: pd.DataFrame) -> pd.DataFrame:
+    """Summarize the distribution of accumulated drift by observed distance."""
+    rows = []
+    for distance, group in trajectories.dropna(subset=["deriva_desde_primera"]).groupby("anios_desde_primera"):
+        values = group["deriva_desde_primera"].to_numpy(dtype=float)
+        projects = int(group["id_publico"].nunique())
+        if projects < 10:
+            continue
+        percentiles = np.percentile(values, [10, 25, 50, 75, 90])
+        rows.append({"anios_desde_primera": distance, "n_proyectos": projects, "p10": percentiles[0], "p25": percentiles[1], "mediana": percentiles[2], "p75": percentiles[3], "p90": percentiles[4]})
+    return pd.DataFrame(rows, columns=["anios_desde_primera", "n_proyectos", "p10", "p25", "mediana", "p75", "p90"])
+
+
+def build_ten_table(cif: pd.DataFrame) -> pd.DataFrame:
+    """Express incident competing risks as counts out of ten projects."""
+    selected = cif.loc[cif["cohorte"].eq("incidente") & cif["grupo"].isin(GROUP_LABELS) & cif["t"].isin({4, 6})]
+    rows = []
+    for row in selected.itertuples(index=False):
+        operation = round(10 * float(row.cif_op))
+        exits = round(10 * float(row.cif_sal))
+        remainder = 10 - operation - exits
+        if remainder < 0:
+            raise ValueError("resto negativo en visualización de cada 10")
+        rows.append({"grupo": row.grupo, "grupo_etiqueta": GROUP_LABELS[row.grupo], "horizonte": int(row.t), "operan": operation, "salen": exits, "resto": remainder})
+    return pd.DataFrame(rows)
+
+
+def build_sensitivity_potential(table: pd.DataFrame) -> pd.DataFrame:
+    """Pivot the expanded OLS potential term for the three regression scenarios."""
+    labels = {"principal": "Principal", "sin_par_2021_2023": "Sin el par 2021→2023", "sin_estatales": "Sin Codelco ni Enami"}
+    term = 'C(condicion_prev, Treatment("BASE"))[T.POTENCIAL]'
+    selected = table.loc[table["modelo"].eq("ols_ampliado") & table["metrica"].isin({f"coef:{term}", f"p:{term}"})].copy()
+    selected["tipo"] = selected["metrica"].str.split(":", n=1).str[0]
+    result = selected.pivot(index="escenario", columns="tipo", values="valor").reset_index()
+    result.insert(1, "escenario_etiqueta", result["escenario"].map(labels))
+    if result["escenario_etiqueta"].isna().any():
+        raise ValueError("escenario sin etiqueta")
+    return result[["escenario", "escenario_etiqueta", "coef", "p"]]
+
+
+def build_reconciliation_matrix(table: pd.DataFrame) -> pd.DataFrame:
+    """Build the ordered compact reconciliation matrix."""
+    result = table[["edicion_desde", "edicion_hasta", "categoria", "estado"]].copy()
+    result["par"] = result["edicion_desde"].astype(str) + "→" + result["edicion_hasta"].astype(str)
+    pairs = result[["edicion_desde", "edicion_hasta"]].drop_duplicates().sort_values(["edicion_desde", "edicion_hasta"])
+    order = {(row.edicion_desde, row.edicion_hasta): index for index, row in enumerate(pairs.itertuples(index=False), start=1)}
+    result["orden_par"] = [order[(row.edicion_desde, row.edicion_hasta)] for row in result.itertuples(index=False)]
+    result["categoria_etiqueta"] = result["categoria"].map(CATEGORY_LABELS)
+    if result["categoria_etiqueta"].isna().any():
+        raise ValueError("categoría sin etiqueta")
+    result["simbolo"] = result["estado"].map(lambda value: "✓" if value == "ok" else "")
+    output = result[["par", "orden_par", "categoria_etiqueta", "estado", "simbolo"]]
+    if len(output) != 30:
+        raise ValueError(f"matriz de conciliación requiere 30 filas, recibió {len(output)}")
+    return output
+
+
+def write_visual_tables(tables: dict[str, pd.DataFrame], interim_dir: Path) -> None:
+    """Write dashboard-specific visual tables as parquet."""
     interim_dir.mkdir(parents=True, exist_ok=True)
     for name, table in tables.items():
         table.to_parquet(interim_dir / f"{name}.parquet", index=False)

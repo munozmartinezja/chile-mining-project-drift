@@ -125,7 +125,7 @@ def _metrics(
         "n_train": n_train if n_train is not None else np.nan,
         "n_test": len(predictions),
         "prevalencia_test": float(observed.mean()),
-        "auc": auc_mann_whitney(observed, probability),
+        "auc": np.nan if model == "prevalencia" else auc_mann_whitney(observed, probability),
         "brier": float(((observed - probability) ** 2).mean()),
         "calibracion": float(probability.mean() - observed.mean()),
     }

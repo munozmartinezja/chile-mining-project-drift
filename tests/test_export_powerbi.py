@@ -13,7 +13,7 @@ def test_export_is_anonymous_and_uses_bom_and_dot_decimal(tmp_path: Path) -> Non
         {
             "project_id": [1],
             "id_publico": ["C3-001"],
-            "sector": ["ORO"],
+            "sector": ["Oro"],
             "region": ["NORTE"],
             "condicion_inicial": ["BASE"],
             "primera_edicion": [2020],
@@ -27,7 +27,7 @@ def test_export_is_anonymous_and_uses_bom_and_dot_decimal(tmp_path: Path) -> Non
     )
     tables = {
         "trayectorias": pd.DataFrame(
-            {"id_publico": ["C3-001"], "edicion": [2020], "capex_real": [12.5]}
+            {"id_publico": ["C3-001"], "edicion": [2020], "capex_real": [12.5], "condicion": ["BASE"]}
         ),
         "desc_cartera_edicion": pd.DataFrame(
             {"edicion": [2020], "capex_nominal_total": [12.5]}
@@ -48,6 +48,7 @@ def test_export_is_anonymous_and_uses_bom_and_dot_decimal(tmp_path: Path) -> Non
         date_rule_matrix=pd.DataFrame({"declarado": pd.Series(dtype=str)}),
         copper_prices=pd.DataFrame({"edicion": pd.Series(dtype=int)}),
         claims=[],
+        visual_tables={"viz_abanico": pd.DataFrame({"anios_desde_primera": [4]})},
     )
     for path in paths:
         assert path.read_bytes().startswith(b"\xef\xbb\xbf")
@@ -65,3 +66,7 @@ def test_export_is_anonymous_and_uses_bom_and_dot_decimal(tmp_path: Path) -> Non
         encoding="utf-8-sig"
     )
     assert "12.5" in portfolio_text
+    dimension = pd.read_csv(tmp_path / "dim_proyecto.csv")
+    assert dimension.loc[0, "sector_etiqueta"] == "Oro"
+    assert dimension.loc[0, "desenlace_orden"] == 4
+    assert (tmp_path / "viz_abanico.csv").exists()

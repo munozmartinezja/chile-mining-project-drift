@@ -33,6 +33,8 @@ COUNT_IDS = {
     "max_proyectos_edicion",
     "n_escenarios_regresion",
     "n_escenarios_potencial_robusto",
+    "n_proyectos_anio4",
+    "n_cifras_verificadas",
 }
 
 DATA_EDITIONS = [*range(2014, 2022), 2023, 2024, 2025]
@@ -662,6 +664,23 @@ def _recalculate(
             "max_proyectos_edicion": int(edition_counts.max()),
         }
     )
+    year_four_drifts = []
+    for first, _last in project_histories.values():
+        project_id = first["project_id"]
+        first_edition = int(first["edicion"])
+        first_pem = first["puesta_en_marcha"]
+        appearances = panel.loc[panel["project_id"].eq(project_id)]
+        target = appearances.loc[appearances["edicion"].eq(first_edition + 4)]
+        if not target.empty and pd.notna(first_pem) and pd.notna(target.iloc[0]["puesta_en_marcha"]):
+            year_four_drifts.append(float(target.iloc[0]["puesta_en_marcha"]) - float(first_pem))
+    if len(year_four_drifts) >= 10:
+        result.update(
+            {
+                "mediana_deriva_anio4": float(np.percentile(year_four_drifts, 50)),
+                "p90_deriva_anio4": float(np.percentile(year_four_drifts, 90)),
+                "n_proyectos_anio4": len(year_four_drifts),
+            }
+        )
     if egresos_path is not None:
         outcome_counts = {
             "entro_en_operacion": 0,
@@ -934,8 +953,12 @@ def verify_claims_register(
         copper_workbook_path,
     )
     verified: list[dict[str, object]] = []
+    count_claim: dict[str, object] | None = None
     for claim in claims:
         item = dict(claim)
+        if item.get("id") == "n_cifras_verificadas":
+            count_claim = item
+            continue
         if item.get("estado") == "informativa":
             verified.append(item)
             continue
@@ -948,6 +971,15 @@ def verify_claims_register(
             else "fallida"
         )
         verified.append(item)
+    if count_claim is not None:
+        recalculated = sum(item.get("estado") == "verificada" for item in verified)
+        count_claim["valor_recalculado"] = recalculated
+        count_claim["estado"] = (
+            "verificada"
+            if _matches("n_cifras_verificadas", count_claim["valor"], recalculated)
+            else "fallida"
+        )
+        verified.append(count_claim)
     return verified
 
 
