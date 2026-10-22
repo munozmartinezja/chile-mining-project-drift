@@ -113,6 +113,24 @@ def test_bootstrap_is_deterministic_with_fixed_seed() -> None:
     pd.testing.assert_frame_equal(first, second)
 
 
+def test_bootstrap_changes_with_another_seed() -> None:
+    projects = pd.DataFrame(
+        {
+            "project_id": range(12),
+            "primera_edicion": [2015] * 12,
+            "ultima_edicion": [2016] * 8 + [2025] * 4,
+            "desenlace": ["entro_en_operacion"] * 4
+            + ["salio_sin_operar"] * 4
+            + ["vigente"] * 4,
+            "condicion_inicial": ["BASE"] * 12,
+        }
+    )
+    first = build_cif_table(projects, bootstrap_replicates=40, seed=20261021)
+    second = build_cif_table(projects, bootstrap_replicates=40, seed=7)
+    columns = ["ic_op_inf", "ic_op_sup", "ic_sal_inf", "ic_sal_sup"]
+    assert not first[columns].equals(second[columns])
+
+
 def test_write_source_does_not_require_pdf(tmp_path: Path) -> None:
     projects = pd.DataFrame([project("A", 2015, 2025, "vigente")])
     table = build_cif_table(projects, bootstrap_replicates=2)

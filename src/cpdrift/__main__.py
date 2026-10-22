@@ -15,6 +15,8 @@ from .conciliacion import (
     write_reconciliation,
 )
 from .declared import extract_declared_all
+from .descriptivo import build_descriptive_tables, write_descriptive_tables
+from .export_powerbi import export_powerbi
 from .extract import apply_extraction_corrections, extract_all
 from .indicators import build_indicator_tables, write_indicator_tables
 from .match import assign_project_ids
@@ -29,7 +31,12 @@ from .regression import (
 from .report import build_report, write_report
 from .sensibilidad import build_sensitivity, write_sensitivity
 from .survival import build_cif_from_parquet, write_cif
-from .validacion import build_temporal_validation, write_temporal_validation
+from .validacion import (
+    build_successive_validation,
+    build_temporal_validation,
+    write_successive_validation,
+    write_temporal_validation,
+)
 from .verify import require_verified, verify_claims_register, write_claims_register
 
 RAW_DIR = Path("data/raw")
@@ -84,6 +91,16 @@ def main() -> None:
         panel_df, projects_df, CPI_PATH, outcome_references.egresos
     )
     write_indicator_tables(indicators, INTERIM_DIR)
+    descriptive, projects_df = build_descriptive_tables(
+        panel_df,
+        projects_df,
+        indicators.transiciones,
+        indicators.proyectos_deriva,
+        outcome_reconciliation,
+        CPI_PATH,
+    )
+    projects_df.to_parquet(INTERIM_DIR / "proyectos.parquet", index=False)
+    write_descriptive_tables(descriptive, INTERIM_DIR)
 
     print("Estimando modelos asociativos…")
     cif = build_cif_from_parquet(INTERIM_DIR / "proyectos_deriva.parquet")
@@ -105,6 +122,8 @@ def main() -> None:
     )
     validation = build_temporal_validation(extended_data)
     write_temporal_validation(validation, INTERIM_DIR)
+    successive_validation = build_successive_validation(extended_data)
+    write_successive_validation(successive_validation, INTERIM_DIR)
     sensitivity_projects = indicators.proyectos_deriva.merge(
         projects_df[["project_id", "fuente_desenlace"]],
         on="project_id",
@@ -127,6 +146,10 @@ def main() -> None:
         conciliacion=outcome_reconciliation,
         ols_ampliado=regressions.ols_ampliado,
         validacion=validation.metricas,
+        validacion_cortes=successive_validation.cortes,
+        validacion_agregada=successive_validation.agregada,
+        validacion_bootstrap=successive_validation.bootstrap,
+        descriptivas=descriptive,
         sensibilidad=sensitivity,
         regla_fecha=date_rule.detalle,
     )
@@ -156,11 +179,48 @@ def main() -> None:
         },
         outcome_reconciliation=outcome_reconciliation.to_dict("records"),
         robustness=sensitivity.to_dict("records"),
-        temporal_validation=validation.metricas.to_dict("records"),
-        calibration=validation.calibracion.to_dict("records"),
+        temporal_validation=successive_validation.cortes.to_dict("records"),
+        aggregate_validation=successive_validation.agregada.to_dict("records"),
+        calibration=successive_validation.calibracion.to_dict("records"),
+        single_cut_validation=validation.metricas.to_dict("records"),
+        validation_intervals=successive_validation.bootstrap,
+        descriptive={
+            name: table.to_dict("records") for name, table in descriptive.items()
+        },
         date_rule=date_rule.matriz.to_dict("records"),
     )
     md_path, json_path = write_report(report, INTERIM_DIR)
+
+    export_projects = projects_df.merge(
+        indicators.proyectos_deriva[
+            [
+                "project_id",
+                "sector",
+                "region",
+                "condicion_inicial",
+                "capex_inicial_real",
+            ]
+        ],
+        on="project_id",
+        how="left",
+        validate="one_to_one",
+    )
+    export_powerbi(
+        Path("data/powerbi"),
+        panel=panel_df,
+        projects=export_projects,
+        transitions=indicators.transiciones,
+        descriptive=descriptive,
+        cif=cif,
+        reconciliation=outcome_reconciliation,
+        validation_cuts=successive_validation.cortes,
+        validation_aggregate=successive_validation.agregada,
+        aggregate_calibration=successive_validation.calibracion,
+        sensitivity=sensitivity,
+        date_rule_matrix=date_rule.matriz,
+        copper_prices=copper_prices,
+        claims=verified_claims,
+    )
 
     if REVISION_PATH.exists():
         with open(REVISION_PATH) as fh:

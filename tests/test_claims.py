@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from cpdrift.claims import build_claims_register
+from cpdrift.descriptivo import build_descriptive_tables
 from cpdrift.indicators import build_indicator_tables
 from cpdrift.regression import fit_ols
 from cpdrift.survival import build_cif_table
@@ -332,7 +333,7 @@ def test_model_claims_are_independently_verified(tmp_path: Path) -> None:
     panel.to_parquet(panel_path, index=False)
     projects.to_parquet(projects_path, index=False)
     indicators = build_indicator_tables(panel, projects, cpi_path)
-    cif = build_cif_table(indicators.proyectos_deriva, bootstrap_replicates=5)
+    cif = build_cif_table(indicators.proyectos_deriva, bootstrap_replicates=1_000)
     ols = fit_ols(indicators.transiciones)
     logit = pd.DataFrame(
         [
@@ -446,6 +447,60 @@ def test_robustness_claims_are_registered() -> None:
     values = {item["id"]: item["valor"] for item in claims}
 
     assert values["ols_amp_coef_precio_cu"] == 2.0
-    assert values["auc_test_completo"] == 0.7
+    assert values["auc_corte_unico_completo"] == 0.7
     assert values["n_escenarios_potencial_robusto"] == 3
     assert values["pct_regla_fecha_discrepante"] == 50
+
+
+def test_altered_descriptive_claim_is_detected(tmp_path: Path) -> None:
+    panel = pd.DataFrame(
+        {
+            "project_id": ["P1", "P1"],
+            "edicion": [2020, 2021],
+            "nombre_norm": ["P1", "P1"],
+            "puesta_en_marcha": [2022, 2023],
+            "inversion_mmusd": [100.0, 110.0],
+            "condicion": ["BASE", "BASE"],
+            "sector": ["GRAN_MINERIA_CU", "GRAN_MINERIA_CU"],
+            "region": ["Antofagasta", "Antofagasta"],
+        }
+    )
+    projects = pd.DataFrame(
+        {
+            "project_id": ["P1"],
+            "primera_edicion": [2020],
+            "ultima_edicion": [2021],
+            "n_ediciones": [2],
+            "pem_primera": [2022],
+            "capex_primero": [100.0],
+            "desenlace": ["vigente"],
+            "fuente_desenlace": ["vigente"],
+            "reingreso": [False],
+        }
+    )
+    cpi_path = tmp_path / "cpi.csv"
+    pd.DataFrame(
+        {"anio": [2020, 2021, 2025], "s1": [100, 100, 100], "s2": [100, 100, 100]}
+    ).to_csv(cpi_path, index=False)
+    panel_path = tmp_path / "panel.parquet"
+    projects_path = tmp_path / "projects.parquet"
+    panel.to_parquet(panel_path, index=False)
+    projects.to_parquet(projects_path, index=False)
+    indicators = build_indicator_tables(panel, projects, cpi_path)
+    descriptive, _ = build_descriptive_tables(
+        panel,
+        projects,
+        indicators.transiciones,
+        indicators.proyectos_deriva,
+        pd.DataFrame(),
+        cpi_path,
+    )
+    claims = build_claims_register(indicators, descriptivas=descriptive)
+    altered = [dict(item) for item in claims]
+    target = next(item for item in altered if item["id"] == "pct_atraso_base")
+    target["valor"] = float(target["valor"]) + 1
+    verified = verify_claims_register(
+        altered, panel_path, projects_path, cpi_path
+    )
+    state = next(item["estado"] for item in verified if item["id"] == "pct_atraso_base")
+    assert state == "fallida"

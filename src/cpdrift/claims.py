@@ -64,6 +64,10 @@ def build_claims_register(
     conciliacion: pd.DataFrame | None = None,
     ols_ampliado: pd.DataFrame | None = None,
     validacion: pd.DataFrame | None = None,
+    validacion_cortes: pd.DataFrame | None = None,
+    validacion_agregada: pd.DataFrame | None = None,
+    validacion_bootstrap: dict[str, float] | None = None,
+    descriptivas: dict[str, pd.DataFrame] | None = None,
     sensibilidad: pd.DataFrame | None = None,
     regla_fecha: pd.DataFrame | None = None,
 ) -> list[dict[str, object]]:
@@ -206,15 +210,115 @@ def build_claims_register(
         ].iloc[0]
         values.update(
             {
-                "auc_test_completo": float(complete["auc"]),
-                "auc_test_solo_condicion": float(condition["auc"]),
-                "brier_test_completo": float(complete["brier"]),
-                "brier_test_prevalencia": float(prevalence["brier"]),
-                "calibracion_test_completo": float(
+                "auc_corte_unico_completo": float(complete["auc"]),
+                "auc_corte_unico_solo_condicion": float(condition["auc"]),
+                "brier_corte_unico_completo": float(complete["brier"]),
+                "brier_corte_unico_prevalencia": float(prevalence["brier"]),
+                "calibracion_corte_unico_completo": float(
                     complete["calibracion_global"]
                 ),
-                "n_train": int(complete["n_train"]),
-                "n_test": int(complete["n_test"]),
+                "n_train_corte_unico": int(complete["n_train"]),
+                "n_test_corte_unico": int(complete["n_test"]),
+            }
+        )
+    if (
+        validacion_cortes is not None
+        and validacion_agregada is not None
+        and validacion_bootstrap is not None
+    ):
+        aggregate = validacion_agregada.set_index("modelo")
+        complete = aggregate.loc["completo"]
+        prevalence = aggregate.loc["prevalencia"]
+        values.update(
+            {
+                "auc_agregado_completo": float(complete["auc"]),
+                "auc_agregado_completo_ic_inf": validacion_bootstrap["auc_ic_inf"],
+                "auc_agregado_completo_ic_sup": validacion_bootstrap["auc_ic_sup"],
+                "auc_agregado_solo_condicion": float(
+                    aggregate.loc["solo_condicion", "auc"]
+                ),
+                "brier_agregado_completo": float(complete["brier"]),
+                "brier_agregado_prevalencia": float(prevalence["brier"]),
+                "mejora_brier_agregada": float(
+                    prevalence["brier"] - complete["brier"]
+                ),
+                "mejora_brier_agregada_ic_inf": validacion_bootstrap[
+                    "mejora_brier_ic_inf"
+                ],
+                "mejora_brier_agregada_ic_sup": validacion_bootstrap[
+                    "mejora_brier_ic_sup"
+                ],
+                "calibracion_agregada_completo": float(complete["calibracion"]),
+                "auc_corte_min": float(
+                    validacion_cortes.loc[
+                        validacion_cortes["modelo"].eq("completo"), "auc"
+                    ].min()
+                ),
+                "auc_corte_max": float(
+                    validacion_cortes.loc[
+                        validacion_cortes["modelo"].eq("completo"), "auc"
+                    ].max()
+                ),
+                "n_cortes": int(validacion_cortes["corte"].nunique()),
+                "n_test_agregado": int(complete["n_test"]),
+            }
+        )
+    if descriptivas is not None:
+        portfolio = descriptivas["desc_cartera_edicion"]
+        profile = descriptivas["desc_perfil"]
+        sector = profile.loc[profile["dimension"].eq("sector")]
+        region = profile.loc[profile["dimension"].eq("region")]
+        total_projects = int(
+            descriptivas["desc_desenlace_cohorte"]["n"].sum()
+        )
+        copper = sector.loc[
+            sector["categoria"].isin(
+                {"GRAN_MINERIA_CU", "ESTATAL_CU", "MEDIANA_MINERIA_CU"}
+            ),
+            "n_proyectos",
+        ].sum()
+        ant = region.loc[
+            region["categoria"].astype(str).str.upper().eq("ANTOFAGASTA"),
+            "n_proyectos",
+        ].sum()
+        values.update(
+            {
+                **{
+                    f"pct_atraso_{condition.lower()}": (
+                        None
+                        if transitions.loc[
+                            transitions["condicion_prev"].eq(condition), "delta_pem"
+                        ].dropna().empty
+                        else float(
+                            transitions.loc[
+                                transitions["condicion_prev"].eq(condition),
+                                "delta_pem",
+                            ]
+                            .dropna()
+                            .gt(0)
+                            .mean()
+                            * 100
+                        )
+                    )
+                    for condition in ("BASE", "PROBABLE", "POSIBLE", "POTENCIAL")
+                },
+                "pct_transiciones_sin_cambio": (
+                    None
+                    if transitions["delta_pem"].dropna().empty
+                    else float(transitions["delta_pem"].dropna().eq(0).mean() * 100)
+                ),
+                "mediana_capex_inicial_real": _stat(
+                    tables.proyectos_deriva["capex_inicial_real"], "median"
+                ),
+                "pct_proyectos_cobre": (
+                    None if total_projects == 0 else float(copper / total_projects * 100)
+                ),
+                "pct_proyectos_antofagasta": (
+                    None if total_projects == 0 else float(ant / total_projects * 100)
+                ),
+                "n_ediciones": int(portfolio["edicion"].nunique()),
+                "min_proyectos_edicion": int(portfolio["n_proyectos"].min()),
+                "max_proyectos_edicion": int(portfolio["n_proyectos"].max()),
             }
         )
     if sensibilidad is not None:
@@ -400,13 +504,13 @@ def build_claims_register(
         "ols_amp_p_precio_cu": ("p precio cobre OLS ampliado", "probabilidad", "Valor p agrupado."),
         "ols_amp_coef_estatal": ("Coeficiente estatal OLS ampliado", "años por año", "Coeficiente del indicador estatal."),
         "ols_amp_p_estatal": ("p estatal OLS ampliado", "probabilidad", "Valor p agrupado."),
-        "auc_test_completo": ("AUC temporal modelo completo", "proporción", "AUC Mann-Whitney en prueba."),
-        "auc_test_solo_condicion": ("AUC temporal solo condición", "proporción", "AUC Mann-Whitney en prueba."),
-        "brier_test_completo": ("Brier temporal modelo completo", "puntaje", "Media del error cuadrático probabilístico."),
-        "brier_test_prevalencia": ("Brier temporal prevalencia", "puntaje", "Media del error cuadrático probabilístico."),
-        "calibracion_test_completo": ("Calibración global modelo completo", "proporción", "Media predicha menos tasa observada."),
-        "n_train": ("Observaciones de entrenamiento", "transiciones", "Conteo con ed_prev hasta 2019."),
-        "n_test": ("Observaciones de prueba", "transiciones", "Conteo con ed_prev desde 2020."),
+        "auc_corte_unico_completo": ("AUC temporal modelo completo, corte único", "proporción", "AUC Mann-Whitney en prueba."),
+        "auc_corte_unico_solo_condicion": ("AUC temporal solo condición, corte único", "proporción", "AUC Mann-Whitney en prueba."),
+        "brier_corte_unico_completo": ("Brier temporal modelo completo, corte único", "puntaje", "Media del error cuadrático probabilístico."),
+        "brier_corte_unico_prevalencia": ("Brier temporal prevalencia, corte único", "puntaje", "Media del error cuadrático probabilístico."),
+        "calibracion_corte_unico_completo": ("Calibración modelo completo, corte único", "proporción", "Media predicha menos tasa observada."),
+        "n_train_corte_unico": ("Entrenamiento del corte único", "transiciones", "Conteo con ed_prev hasta 2019."),
+        "n_test_corte_unico": ("Prueba del corte único", "transiciones", "Conteo con ed_prev desde 2020."),
         "n_escenarios_regresion": ("Escenarios de regresión", "escenarios", "Conteo de escenarios OLS ampliados."),
         "n_escenarios_potencial_robusto": ("Escenarios con asociación potencial robusta", "escenarios", "Coeficiente positivo con p menor a 0,05."),
         "pct_regla_fecha_discrepante": ("Discrepancia de regla de fecha", "porcentaje", "Salidas cuya regla de fecha contradice lo declarado."),
@@ -414,10 +518,10 @@ def build_claims_register(
     claims = [
         {
             "id": claim_id,
-            "descripcion": metadata[claim_id][0],
+            "descripcion": metadata.get(claim_id, (claim_id.replace("_", " "), "valor", "Recálculo independiente."))[0],
             "valor": value,
-            "unidad": metadata[claim_id][1],
-            "calculo": metadata[claim_id][2],
+            "unidad": metadata.get(claim_id, ("", "valor", "Recálculo independiente."))[1],
+            "calculo": metadata.get(claim_id, ("", "", "Recálculo independiente."))[2],
         }
         for claim_id, value in values.items()
     ]
@@ -426,9 +530,15 @@ def build_claims_register(
         for row in cif.loc[cif["t"].isin((2, 4, 6))].itertuples(index=False):
             for column in interval_columns:
                 value = getattr(row, column)
+                public_id = f"{column}_{row.t}_{str(row.grupo).lower()}"
+                verified_interval = (
+                    row.cohorte == "incidente"
+                    and row.grupo in {"BASE_PROBABLE", "POSIBLE_POTENCIAL"}
+                    and row.t in {4, 6}
+                )
                 claims.append(
                     {
-                        "id": f"{column}_{row.cohorte}_{row.grupo}_{row.t}",
+                        "id": public_id if verified_interval else f"{column}_{row.cohorte}_{row.grupo}_{row.t}",
                         "descripcion": (
                             f"Intervalo bootstrap {column} para {row.cohorte}, "
                             f"{row.grupo}, t={row.t}"
@@ -436,7 +546,7 @@ def build_claims_register(
                         "valor": None if pd.isna(value) else float(value),
                         "unidad": "proporción",
                         "calculo": "Percentil bootstrap por proyecto.",
-                        "estado": "informativa",
+                        **({} if verified_interval else {"estado": "informativa"}),
                     }
                 )
     if logit is not None:

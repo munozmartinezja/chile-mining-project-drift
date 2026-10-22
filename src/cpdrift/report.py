@@ -41,6 +41,10 @@ def build_report(
     outcome_reconciliation: list[dict[str, Any]] | None = None,
     robustness: list[dict[str, Any]] | None = None,
     temporal_validation: list[dict[str, Any]] | None = None,
+    aggregate_validation: list[dict[str, Any]] | None = None,
+    single_cut_validation: list[dict[str, Any]] | None = None,
+    validation_intervals: dict[str, float] | None = None,
+    descriptive: dict[str, list[dict[str, Any]]] | None = None,
     calibration: list[dict[str, Any]] | None = None,
     date_rule: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -72,6 +76,16 @@ def build_report(
         "validacion_temporal": (
             [] if temporal_validation is None else temporal_validation
         ),
+        "validacion_agregada": (
+            [] if aggregate_validation is None else aggregate_validation
+        ),
+        "validacion_corte_unico": (
+            [] if single_cut_validation is None else single_cut_validation
+        ),
+        "intervalos_validacion": (
+            {} if validation_intervals is None else validation_intervals
+        ),
+        "descriptivo": {} if descriptive is None else descriptive,
         "calibracion_test": [] if calibration is None else calibration,
         "regla_fecha": [] if date_rule is None else date_rule,
         "decisiones_tomadas": DECISIONES if decisions is None else decisions,
@@ -211,10 +225,24 @@ def write_report(report: dict[str, Any], interim_dir: Path) -> tuple[Path, Path]
         ],
     )
     validation = _table(
+        ["Corte", "Modelo", "AUC", "Brier", "Calibración", "n train", "n test"],
+        [
+            [item["corte"], item["modelo"], item["auc"], item["brier"], item["calibracion"], item["n_train"], item["n_test"]]
+            for item in report["validacion_temporal"]
+        ],
+    )
+    aggregate_validation = _table(
+        ["Modelo", "AUC", "Brier", "Calibración", "n test"],
+        [
+            [item["modelo"], item["auc"], item["brier"], item["calibracion"], item["n_test"]]
+            for item in report["validacion_agregada"]
+        ],
+    )
+    single_cut = _table(
         ["Modelo", "AUC", "Brier", "Calibración", "n train", "n test"],
         [
             [item["modelo"], item["auc"], item["brier"], item["calibracion_global"], item["n_train"], item["n_test"]]
-            for item in report["validacion_temporal"]
+            for item in report["validacion_corte_unico"]
         ],
     )
     calibration = _table(
@@ -227,6 +255,20 @@ def write_report(report: dict[str, Any], interim_dir: Path) -> tuple[Path, Path]
     date_rule = _table(
         ["Declarado", "Regla", "n"],
         [[item["declarado"], item["regla"], item["n"]] for item in report["regla_fecha"]],
+    )
+    portfolio = _table(
+        ["Edición", "Proyectos", "Capex nominal", "Capex real", "Base", "Probable", "Posible", "Potencial"],
+        [
+            [item["edicion"], item["n_proyectos"], item["capex_nominal_total"], item["capex_real_total"], item["n_base"], item["n_probable"], item["n_posible"], item["n_potencial"]]
+            for item in report["descriptivo"].get("desc_cartera_edicion", [])
+        ],
+    )
+    delay = _table(
+        ["Condición", "Transiciones", "% atraso", "% sin cambio", "% adelanto", "Mediana", "p90"],
+        [
+            [item["condicion_prev"], item["n_transiciones"], item["pct_atraso"], item["pct_sin_cambio"], item["pct_adelanto"], item["mediana_delta"], item["p90_delta"]]
+            for item in report["descriptivo"].get("desc_atraso_condicion", [])
+        ],
     )
     text = (
         f"# {DISCLAIMER}\n\n## Conciliación por edición\n\n{reconciliation}\n\n"
@@ -243,6 +285,10 @@ def write_report(report: dict[str, Any], interim_dir: Path) -> tuple[Path, Path]
         + outcome_reconciliation
         + "\n\n## Indicadores\n\n"
         + indicators
+        + "\n\n## Descriptivo\n\n### Cartera por edición\n\n"
+        + portfolio
+        + "\n\n### Deriva por condición\n\n"
+        + delay
         + "\n\n## Modelos\n\nresultados asociativos.\n\n"
         + "### Incidencia acumulada\n\n"
         + cif
@@ -256,8 +302,14 @@ def write_report(report: dict[str, Any], interim_dir: Path) -> tuple[Path, Path]
         + robustness
         + "\n\n## Validación temporal\n\n"
         + validation
+        + "\n\n### Resultados agregados\n\n"
+        + aggregate_validation
+        + "\n\nIntervalos bootstrap agregados: "
+        + str(report["intervalos_validacion"])
         + "\n\n### Calibración por quintiles\n\n"
         + calibration
+        + "\n\n### Sensibilidad: corte único\n\n"
+        + single_cut
         + "\n\n## Regla de fecha contra desenlace declarado\n\n"
         + date_rule
         + "\n\n## Catálogos desconocidos\n\n"

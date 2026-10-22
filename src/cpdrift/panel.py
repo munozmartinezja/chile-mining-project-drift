@@ -91,7 +91,9 @@ def write_outputs(
     egresos: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     interim_dir.mkdir(parents=True, exist_ok=True)
-    projects = build_projects(panel, egresos)
+    from .descriptivo import add_public_ids
+
+    projects = add_public_ids(build_projects(panel, egresos))
     panel.to_parquet(interim_dir / "panel.parquet", index=False)
     projects.to_parquet(interim_dir / "proyectos.parquet", index=False)
     return panel, projects

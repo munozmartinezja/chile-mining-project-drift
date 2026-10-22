@@ -1,7 +1,13 @@
+import numpy as np
 import pandas as pd
 import pytest
 
-from cpdrift.validacion import auc_mann_whitney, build_temporal_validation
+from cpdrift.validacion import (
+    auc_mann_whitney,
+    build_successive_validation,
+    build_temporal_validation,
+    resample_project_predictions,
+)
 
 
 def test_auc_uses_average_ranks_for_ties() -> None:
@@ -60,3 +66,41 @@ def test_temporal_validation_metrics_and_partition() -> None:
         result.predicciones["p_completo"].mean()
         - result.predicciones["atraso"].mean()
     )
+
+
+def test_successive_cuts_use_only_prior_rows(monkeypatch) -> None:
+    editions = [2017, 2017, 2018, 2018, 2019, 2019, 2020, 2020,
+                2021, 2021, 2023, 2023, 2024, 2024]
+    data = pd.DataFrame(
+        {
+            "project_id": range(len(editions)),
+            "ed_prev": editions,
+            "atraso": [0, 1] * (len(editions) // 2),
+        }
+    )
+    seen: list[tuple[int, int]] = []
+
+    def fake_predictions(train, test, terms):
+        del terms
+        seen.append((int(train["ed_prev"].max()), int(test["ed_prev"].min())))
+        return np.repeat(0.6, len(test))
+
+    monkeypatch.setattr("cpdrift.validacion._firth_predictions", fake_predictions)
+    result = build_successive_validation(data, bootstrap_replicates=10)
+    assert set(result.cortes["corte"]) == {2018, 2019, 2020, 2021, 2023, 2024}
+    assert all(train_max < test_min for train_max, test_min in seen)
+
+
+def test_project_resampling_keeps_each_projects_rows_together() -> None:
+    predictions = pd.DataFrame(
+        {
+            "project_id": [1, 1, 2, 2, 2],
+            "row": [10, 11, 20, 21, 22],
+        }
+    )
+    sampled = resample_project_predictions(
+        predictions, np.random.default_rng(20261022)
+    )
+    for draw in sampled["bootstrap_draw"].unique():
+        rows = sampled.loc[sampled["bootstrap_draw"].eq(draw), "row"].tolist()
+        assert rows in ([10, 11], [20, 21, 22])
