@@ -26,11 +26,13 @@ def _percentage(series: pd.Series, comparison: str) -> float | None:
     return float(getattr(values, comparison)(0).mean() * 100)
 
 
-def _cif_value(table: pd.DataFrame, group: str, column: str) -> float | None:
+def _cif_value(
+    table: pd.DataFrame, group: str, column: str, time: int = 6
+) -> float | None:
     row = table.loc[
         table["cohorte"].eq("incidente")
         & table["grupo"].eq(group)
-        & table["t"].eq(6)
+        & table["t"].eq(time)
     ]
     return None if row.empty else float(row.iloc[0][column])
 
@@ -38,6 +40,13 @@ def _cif_value(table: pd.DataFrame, group: str, column: str) -> float | None:
 def _ols_value(table: pd.DataFrame, term: str) -> float | None:
     row = table.loc[table["termino"].eq(term)]
     return None if row.empty else float(row.iloc[0]["coef"])
+
+
+def _table_value(
+    table: pd.DataFrame, row_column: str, row_value: str, value_column: str
+) -> float | None:
+    row = table.loc[table[row_column].eq(row_value)]
+    return None if row.empty else float(row.iloc[0][value_column])
 
 
 def _snake_ascii(value: object) -> str:
@@ -53,6 +62,10 @@ def build_claims_register(
     projects: pd.DataFrame | None = None,
     egresos: pd.DataFrame | None = None,
     conciliacion: pd.DataFrame | None = None,
+    ols_ampliado: pd.DataFrame | None = None,
+    validacion: pd.DataFrame | None = None,
+    sensibilidad: pd.DataFrame | None = None,
+    regla_fecha: pd.DataFrame | None = None,
 ) -> list[dict[str, object]]:
     """Build the auditable list of required headline figures."""
     transitions = tables.transiciones
@@ -148,6 +161,88 @@ def build_claims_register(
                 "ols_coef_horizonte": _ols_value(ols, "horizonte"),
                 "ols_n": 0 if ols.empty else int(ols.iloc[0]["n"]),
             }
+        )
+    if cif is not None:
+        values.update(
+            {
+                f"cif_{event}_4_{group_id}": _cif_value(
+                    cif, group, f"cif_{event}", 4
+                )
+                for group_id, group in (
+                    ("base_probable", "BASE_PROBABLE"),
+                    ("posible_potencial", "POSIBLE_POTENCIAL"),
+                )
+                for event in ("op", "sal")
+            }
+        )
+    if ols_ampliado is not None:
+        potential = 'C(condicion_prev, Treatment("BASE"))[T.POTENCIAL]'
+        values.update(
+            {
+                "ols_amp_coef_potencial": _table_value(
+                    ols_ampliado, "termino", potential, "coef"
+                ),
+                "ols_amp_coef_precio_cu": _table_value(
+                    ols_ampliado, "termino", "log_precio_cu", "coef"
+                ),
+                "ols_amp_p_precio_cu": _table_value(
+                    ols_ampliado, "termino", "log_precio_cu", "p"
+                ),
+                "ols_amp_coef_estatal": _table_value(
+                    ols_ampliado, "termino", "estatal", "coef"
+                ),
+                "ols_amp_p_estatal": _table_value(
+                    ols_ampliado, "termino", "estatal", "p"
+                ),
+            }
+        )
+    if validacion is not None:
+        complete = validacion.loc[validacion["modelo"].eq("completo")].iloc[0]
+        condition = validacion.loc[
+            validacion["modelo"].eq("solo_condicion")
+        ].iloc[0]
+        prevalence = validacion.loc[
+            validacion["modelo"].eq("prevalencia")
+        ].iloc[0]
+        values.update(
+            {
+                "auc_test_completo": float(complete["auc"]),
+                "auc_test_solo_condicion": float(condition["auc"]),
+                "brier_test_completo": float(complete["brier"]),
+                "brier_test_prevalencia": float(prevalence["brier"]),
+                "calibracion_test_completo": float(
+                    complete["calibracion_global"]
+                ),
+                "n_train": int(complete["n_train"]),
+                "n_test": int(complete["n_test"]),
+            }
+        )
+    if sensibilidad is not None:
+        regression = sensibilidad.loc[sensibilidad["modelo"].eq("ols_ampliado")]
+        potential = 'C(condicion_prev, Treatment("BASE"))[T.POTENCIAL]'
+        coefficients = regression.loc[
+            regression["metrica"].eq(f"coef:{potential}")
+        ].set_index("escenario")["valor"]
+        p_values = regression.loc[
+            regression["metrica"].eq(f"p:{potential}")
+        ].set_index("escenario")["valor"]
+        common = coefficients.index.intersection(p_values.index)
+        values.update(
+            {
+                "n_escenarios_regresion": int(regression["escenario"].nunique()),
+                "n_escenarios_potencial_robusto": int(
+                    sum(
+                        coefficients.loc[item] > 0 and p_values.loc[item] < 0.05
+                        for item in common
+                    )
+                ),
+            }
+        )
+    if regla_fecha is not None:
+        values["pct_regla_fecha_discrepante"] = (
+            None
+            if regla_fecha.empty
+            else float(regla_fecha["discrepante"].mean() * 100)
         )
     metadata = {
         "n_proyectos": ("Proyectos no agregados", "proyectos", "Conteo de project_id no agregados."),
@@ -296,6 +391,25 @@ def build_claims_register(
             "transiciones",
             "Conteo de casos completos usados por OLS.",
         ),
+        "cif_op_4_base_probable": ("CIF operación a cuatro años, BASE_PROBABLE", "proporción", "Estimación discreta incidente."),
+        "cif_sal_4_base_probable": ("CIF salida a cuatro años, BASE_PROBABLE", "proporción", "Estimación discreta incidente."),
+        "cif_op_4_posible_potencial": ("CIF operación a cuatro años, POSIBLE_POTENCIAL", "proporción", "Estimación discreta incidente."),
+        "cif_sal_4_posible_potencial": ("CIF salida a cuatro años, POSIBLE_POTENCIAL", "proporción", "Estimación discreta incidente."),
+        "ols_amp_coef_potencial": ("Coeficiente potencial OLS ampliado", "años por año", "Coeficiente asociativo ampliado."),
+        "ols_amp_coef_precio_cu": ("Coeficiente precio cobre OLS ampliado", "años por año", "Coeficiente de log_precio_cu."),
+        "ols_amp_p_precio_cu": ("p precio cobre OLS ampliado", "probabilidad", "Valor p agrupado."),
+        "ols_amp_coef_estatal": ("Coeficiente estatal OLS ampliado", "años por año", "Coeficiente del indicador estatal."),
+        "ols_amp_p_estatal": ("p estatal OLS ampliado", "probabilidad", "Valor p agrupado."),
+        "auc_test_completo": ("AUC temporal modelo completo", "proporción", "AUC Mann-Whitney en prueba."),
+        "auc_test_solo_condicion": ("AUC temporal solo condición", "proporción", "AUC Mann-Whitney en prueba."),
+        "brier_test_completo": ("Brier temporal modelo completo", "puntaje", "Media del error cuadrático probabilístico."),
+        "brier_test_prevalencia": ("Brier temporal prevalencia", "puntaje", "Media del error cuadrático probabilístico."),
+        "calibracion_test_completo": ("Calibración global modelo completo", "proporción", "Media predicha menos tasa observada."),
+        "n_train": ("Observaciones de entrenamiento", "transiciones", "Conteo con ed_prev hasta 2019."),
+        "n_test": ("Observaciones de prueba", "transiciones", "Conteo con ed_prev desde 2020."),
+        "n_escenarios_regresion": ("Escenarios de regresión", "escenarios", "Conteo de escenarios OLS ampliados."),
+        "n_escenarios_potencial_robusto": ("Escenarios con asociación potencial robusta", "escenarios", "Coeficiente positivo con p menor a 0,05."),
+        "pct_regla_fecha_discrepante": ("Discrepancia de regla de fecha", "porcentaje", "Salidas cuya regla de fecha contradice lo declarado."),
     }
     claims = [
         {

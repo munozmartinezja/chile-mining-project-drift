@@ -1,5 +1,6 @@
 import ast
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -374,3 +375,77 @@ def test_model_claims_are_independently_verified(tmp_path: Path) -> None:
     )
     assert all(item["id"] != "logit_or_intercept" for item in informative)
     require_verified(verified)
+
+
+def test_robustness_claims_are_registered() -> None:
+    tables = SimpleNamespace(
+        transiciones=pd.DataFrame(
+            columns=[
+                "delta_pem",
+                "tasa_deriva",
+                "capex_prev_nom",
+                "capex_next_nom",
+                "delta_capex_nom_pct",
+                "delta_capex_real_pct",
+            ]
+        ),
+        proyectos_deriva=pd.DataFrame(),
+        entradas_salidas=pd.DataFrame(
+            [{"salidas_sin_operar": 0, "salidas_operacion": 0}]
+        ),
+        fiabilidad={
+            "pct_a_tiempo": None,
+            "pct_hasta_1_anio": None,
+            "mediana_deriva_acumulada": None,
+        },
+        n_filas_agregadas_excluidas=0,
+    )
+
+    potential = 'C(condicion_prev, Treatment("BASE"))[T.POTENCIAL]'
+    ols_extended = pd.DataFrame(
+        [
+            {"termino": potential, "coef": 1.0, "p": 0.01},
+            {"termino": "log_precio_cu", "coef": 2.0, "p": 0.02},
+            {"termino": "estatal", "coef": 3.0, "p": 0.03},
+        ]
+    )
+    validation = pd.DataFrame(
+        [
+            {
+                "modelo": model,
+                "auc": 0.7,
+                "brier": 0.2,
+                "calibracion_global": 0.01,
+                "n_train": 10,
+                "n_test": 5,
+            }
+            for model in ("completo", "solo_condicion", "prevalencia")
+        ]
+    )
+    sensitivity = pd.DataFrame(
+        [
+            {
+                "escenario": scenario,
+                "modelo": "ols_ampliado",
+                "metrica": metric,
+                "valor": value,
+                "n": 10,
+            }
+            for scenario in ("principal", "sin_par_2021_2023", "sin_estatales")
+            for metric, value in ((f"coef:{potential}", 1.0), (f"p:{potential}", 0.01))
+        ]
+    )
+
+    claims = build_claims_register(
+        tables,
+        ols_ampliado=ols_extended,
+        validacion=validation,
+        sensibilidad=sensitivity,
+        regla_fecha=pd.DataFrame({"discrepante": [True, False]}),
+    )
+    values = {item["id"]: item["valor"] for item in claims}
+
+    assert values["ols_amp_coef_precio_cu"] == 2.0
+    assert values["auc_test_completo"] == 0.7
+    assert values["n_escenarios_potencial_robusto"] == 3
+    assert values["pct_regla_fecha_discrepante"] == 50

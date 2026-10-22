@@ -44,6 +44,9 @@ def test_report_has_required_header_and_sections(tmp_path: Path) -> None:
     assert (tmp_path / "diagnostico.json").exists()
     assert "## Modelos" in text
     assert "resultados asociativos" in text
+    assert "## Robustez" in text
+    assert "## Validación temporal" in text
+    assert "## Regla de fecha contra desenlace declarado" in text
 
 
 def test_report_avoids_disallowed_interpretive_vocabulary() -> None:
