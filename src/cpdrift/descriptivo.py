@@ -140,6 +140,56 @@ def _profile(projects: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def build_rotation_table(reconciliation: pd.DataFrame) -> pd.DataFrame:
+    """Build observed portfolio rotation with chronological signed counts."""
+    columns = [
+        "edicion_desde",
+        "edicion_hasta",
+        "categoria",
+        "n",
+        "capex",
+        "par",
+        "par_corto",
+        "orden_par",
+        "signo",
+        "n_signado",
+    ]
+    if reconciliation.empty:
+        return pd.DataFrame(columns=columns)
+    result = reconciliation.rename(
+        columns={"obs_n": "n", "obs_capex": "capex"}
+    )[["edicion_desde", "edicion_hasta", "categoria", "n", "capex"]].copy()
+    pairs = (
+        result[["edicion_desde", "edicion_hasta"]]
+        .drop_duplicates()
+        .sort_values(["edicion_desde", "edicion_hasta"], kind="stable")
+    )
+    order = {
+        (int(row.edicion_desde), int(row.edicion_hasta)): index
+        for index, row in enumerate(pairs.itertuples(index=False), start=1)
+    }
+    result["par"] = (
+        result["edicion_desde"].astype(str)
+        + "→"
+        + result["edicion_hasta"].astype(str)
+    )
+    result["par_corto"] = [
+        f"{int(start) % 100:02d}→{int(end) % 100:02d}"
+        for start, end in zip(
+            result["edicion_desde"], result["edicion_hasta"], strict=True
+        )
+    ]
+    result["orden_par"] = [
+        order[(int(start), int(end))]
+        for start, end in zip(
+            result["edicion_desde"], result["edicion_hasta"], strict=True
+        )
+    ]
+    result["signo"] = result["categoria"].eq("nuevos").map({True: 1, False: -1})
+    result["n_signado"] = result["n"] * result["signo"]
+    return result[columns]
+
+
 def build_descriptive_tables(
     panel: pd.DataFrame,
     projects: pd.DataFrame,
@@ -172,14 +222,7 @@ def build_descriptive_tables(
         .rename("n")
         .reset_index()
     )
-    if reconciliation.empty:
-        rotation = pd.DataFrame(
-            columns=["edicion_desde", "edicion_hasta", "categoria", "n", "capex"]
-        )
-    else:
-        rotation = reconciliation.rename(
-            columns={"obs_n": "n", "obs_capex": "capex"}
-        )[["edicion_desde", "edicion_hasta", "categoria", "n", "capex"]].copy()
+    rotation = build_rotation_table(reconciliation)
     tables = {
         "desc_cartera_edicion": _portfolio(filtered),
         "desc_deriva_distribucion": _drift_distribution(transitions),

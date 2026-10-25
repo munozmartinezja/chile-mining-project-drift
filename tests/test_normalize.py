@@ -1,7 +1,11 @@
 import pandas as pd
 import pytest
 
-from cpdrift.normalize import _catalog_key, normalize_projects
+from cpdrift.normalize import (
+    _catalog_key,
+    apply_manual_regions,
+    normalize_projects,
+)
 
 
 def source_row(**changes: object) -> dict[str, object]:
@@ -95,3 +99,83 @@ def test_reported_stage_label_maps_to_catalog(value: str, expected: str) -> None
 
     assert frame.loc[0, "etapa"] == expected
     assert unknowns["etapa"] == []
+
+
+def _manual_regions(path, rows) -> None:
+    pd.DataFrame(rows, columns=["edicion", "proyecto_raw", "region", "nota"]).to_csv(
+        path, index=False
+    )
+
+
+def test_manual_region_anchor_fills_all_missing_appearances(tmp_path) -> None:
+    path = tmp_path / "regiones.csv"
+    _manual_regions(path, [[2014, "Proyecto A", "O'Higgins", "nota"]])
+    panel = pd.DataFrame(
+        {
+            "edicion": [2014, 2015],
+            "proyecto_raw": ["Proyecto A", "Proyecto A actualizado"],
+            "project_id": [1, 1],
+            "nombre_norm": ["PROYECTO A", "PROYECTO A ACTUALIZADO"],
+            "region": [pd.NA, pd.NA],
+            "region_imputada": [False, False],
+        }
+    )
+    result = apply_manual_regions(panel, path)
+    assert result["region"].tolist() == ["O'Higgins", "O'Higgins"]
+    assert result["region_imputada"].tolist() == [True, True]
+
+
+def test_manual_region_requires_existing_unique_anchor(tmp_path) -> None:
+    path = tmp_path / "regiones.csv"
+    _manual_regions(path, [[2014, "Ausente", "Atacama", "nota"]])
+    panel = pd.DataFrame(
+        {
+            "edicion": [2014],
+            "proyecto_raw": ["Otro"],
+            "project_id": [1],
+            "nombre_norm": ["OTRO"],
+            "region": ["Atacama"],
+            "region_imputada": [False],
+        }
+    )
+    with pytest.raises(ValueError, match="ancla.*Ausente.*0"):
+        apply_manual_regions(panel, path)
+
+    duplicate = pd.concat([panel.assign(proyecto_raw="Ausente")] * 2, ignore_index=True)
+    with pytest.raises(ValueError, match="ancla.*Ausente.*2"):
+        apply_manual_regions(duplicate, path)
+
+
+def test_manual_regions_reject_remaining_nonaggregate_missing_region(tmp_path) -> None:
+    path = tmp_path / "regiones.csv"
+    _manual_regions(path, [])
+    panel = pd.DataFrame(
+        {
+            "edicion": [2014, 2014],
+            "proyecto_raw": ["Proyecto", "Otros"],
+            "project_id": [1, 2],
+            "nombre_norm": ["PROYECTO", "OTROS PROYECTOS"],
+            "region": [pd.NA, pd.NA],
+            "region_imputada": [False, False],
+        }
+    )
+    with pytest.raises(ValueError, match="proyectos sin región.*1"):
+        apply_manual_regions(panel, path)
+
+
+def test_manual_regions_allow_project_with_a_known_region(tmp_path) -> None:
+    path = tmp_path / "regiones.csv"
+    _manual_regions(path, [])
+    panel = pd.DataFrame(
+        {
+            "edicion": [2023, 2024],
+            "proyecto_raw": ["Proyecto", "Proyecto"],
+            "project_id": [1, 1],
+            "nombre_norm": ["PROYECTO", "PROYECTO"],
+            "region": ["Valparaíso", pd.NA],
+            "region_imputada": [False, False],
+        }
+    )
+    result = apply_manual_regions(panel, path)
+    assert result.loc[0, "region"] == "Valparaíso"
+    assert pd.isna(result.loc[1, "region"])
