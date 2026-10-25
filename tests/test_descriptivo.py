@@ -5,6 +5,7 @@ import pandas as pd
 from cpdrift.descriptivo import (
     add_public_ids,
     build_descriptive_tables,
+    build_rotation_table,
     delta_class,
 )
 
@@ -98,3 +99,24 @@ def test_public_ids_are_deterministic_under_input_reordering() -> None:
     )["id_publico"]
     pd.testing.assert_series_equal(first.sort_index(), second.sort_index())
     assert first.to_dict() == {30: "C3-003", 10: "C3-002", 20: "C3-001"}
+
+
+def test_rotation_adds_order_pair_and_signed_count() -> None:
+    reconciliation = pd.DataFrame(
+        {
+            "edicion_desde": [2021, 2014, 2014],
+            "edicion_hasta": [2023, 2015, 2015],
+            "categoria": ["nuevos", "nuevos", "reestructuracion"],
+            "obs_n": [3, 2, 1],
+            "obs_capex": [30, 20, 10],
+        }
+    )
+    rotation = build_rotation_table(reconciliation)
+    first_pair = rotation.loc[rotation["edicion_desde"].eq(2014)]
+    assert first_pair["par"].eq("2014→2015").all()
+    assert first_pair["par_corto"].eq("14→15").all()
+    assert first_pair["orden_par"].eq(1).all()
+    assert rotation.loc[rotation["categoria"].eq("nuevos"), "signo"].eq(1).all()
+    exit_row = rotation.loc[rotation["categoria"].eq("reestructuracion")].iloc[0]
+    assert exit_row["signo"] == -1
+    assert exit_row["n_signado"] == -1

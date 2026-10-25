@@ -28,7 +28,7 @@ from .export_powerbi import export_powerbi
 from .extract import apply_extraction_corrections, extract_all
 from .indicators import build_indicator_tables, write_indicator_tables
 from .match import assign_project_ids
-from .normalize import impute_regions, normalize_projects
+from .normalize import apply_manual_regions, impute_regions, normalize_projects
 from .panel import write_outputs
 from .precios import build_copper_prices, write_copper_prices
 from .regression import (
@@ -55,6 +55,7 @@ CORRECTIONS_PATH = Path("data/reference/correcciones_extraccion.csv")
 CPI_PATH = Path("data/reference/cpi_us_semestral.csv")
 REFERENCE_DIR = Path("data/reference")
 COPPER_PRICE_PATH = RAW_DIR / "cmo-precios-mensual.xlsx"
+MANUAL_REGIONS_PATH = REFERENCE_DIR / "regiones_manual.csv"
 
 
 def main() -> None:
@@ -76,6 +77,7 @@ def main() -> None:
 
     print("Imputando regiones…")
     panel = impute_regions(identified)
+    panel = apply_manual_regions(panel, MANUAL_REGIONS_PATH)
 
     threshold_by_edition = {
         item["edicion"]: item["umbral_edicion"] for item in reconciliation

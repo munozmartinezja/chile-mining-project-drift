@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from pathlib import Path
 
 import pandas as pd
 
@@ -127,4 +128,55 @@ def impute_regions(frame: pd.DataFrame) -> pd.DataFrame:
     fill = result.loc[missing, "project_id"].map(known)
     result.loc[missing, "region"] = fill
     result.loc[missing & result["region"].notna(), "region_imputada"] = True
+    return result
+
+
+def _aggregate_name(value: object) -> bool:
+    if _missing(value):
+        return False
+    name = str(value)
+    return (
+        name.startswith("OTROS")
+        or "PROYECTOS DE INFORMACION" in name
+        or name in {"PROYECTOS FURE", "TRANQUES"}
+    )
+
+
+def apply_manual_regions(frame: pd.DataFrame, path: Path) -> pd.DataFrame:
+    """Fill missing regions through unique edition/name anchors."""
+    manual = pd.read_csv(path)
+    required = {"edicion", "proyecto_raw", "region", "nota"}
+    if set(manual.columns) != required:
+        raise ValueError("esquema inválido en regiones_manual.csv")
+    result = frame.copy()
+    if "region_imputada" not in result:
+        result["region_imputada"] = False
+    for row in manual.itertuples(index=False):
+        anchor = result.loc[
+            result["edicion"].eq(int(row.edicion))
+            & result["proyecto_raw"].eq(row.proyecto_raw)
+        ]
+        if len(anchor) != 1:
+            raise ValueError(
+                f"ancla regional {row.edicion} / {row.proyecto_raw}: {len(anchor)} filas"
+            )
+        project_id = anchor.iloc[0]["project_id"]
+        missing = result["project_id"].eq(project_id) & result["region"].isna()
+        region = (
+            row.region
+            if row.region in set(REGIONES.values())
+            else normalize_region(row.region)
+        )
+        result.loc[missing, "region"] = region
+        result.loc[missing, "region_imputada"] = True
+    projects = result.loc[~result["nombre_norm"].map(_aggregate_name)]
+    has_region = projects.groupby("project_id", sort=False)["region"].agg(
+        lambda values: values.notna().any()
+    )
+    unresolved = has_region.index[~has_region]
+    if len(unresolved):
+        raise ValueError(
+            "proyectos sin región después de imputación manual: "
+            + ", ".join(map(str, unresolved))
+        )
     return result
