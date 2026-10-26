@@ -22,6 +22,8 @@ COUNT_IDS = {
     "n_desenlace_sin_operar",
     "n_desenlace_censurado",
     "n_pares_conciliados",
+    "n_conciliaciones_exactas",
+    "n_conciliaciones_con_ajuste",
     "n_cohorte_incidente",
     "ols_n",
     "n_train_corte_unico",
@@ -373,12 +375,115 @@ def _verify_auc(y: pd.Series, probability: np.ndarray) -> float:
     )
 
 
+def _recalculate_reconciliation_counts(
+    panel: pd.DataFrame,
+    egresos: pd.DataFrame,
+    cambios_path: Path,
+    ajustes_path: Path,
+) -> dict[str, int]:
+    cambios = pd.read_csv(cambios_path)
+    ajustes = pd.read_csv(ajustes_path)
+    editions = sorted(int(value) for value in panel["edicion"].unique())
+    exact = 0
+    adjusted = 0
+    for edition_from, edition_to in itertools.pairwise(editions):
+        previous = panel.loc[panel["edicion"].eq(edition_from)].drop_duplicates(
+            "project_id"
+        )
+        following = panel.loc[panel["edicion"].eq(edition_to)].drop_duplicates(
+            "project_id"
+        )
+        previous_ids = set(previous["project_id"])
+        following_ids = set(following["project_id"])
+        exits = previous.loc[previous["project_id"].isin(previous_ids - following_ids)]
+        entries = following.loc[
+            following["project_id"].isin(following_ids - previous_ids)
+        ]
+        pair_egresos = egresos.loc[egresos["edicion_desde"].eq(edition_from)]
+        exits = exits.merge(
+            pair_egresos[["proyecto_raw", "motivo"]],
+            on="proyecto_raw",
+            how="left",
+            validate="one_to_one",
+        )
+        if exits["motivo"].isna().any():
+            name = exits.loc[exits["motivo"].isna(), "proyecto_raw"].iloc[0]
+            raise ValueError(f"egreso no encontrado para {edition_from} / {name}")
+        observed: dict[str, tuple[int, float]] = {
+            "nuevos": (
+                len(entries),
+                float(pd.to_numeric(entries["inversion_mmusd"], errors="coerce").sum()),
+            )
+        }
+        for category, reason in (
+            ("entraron_operacion", "operacion"),
+            ("reestructuracion", "reestructuracion"),
+            ("metodologia", "metodologia"),
+        ):
+            selected = exits.loc[exits["motivo"].eq(reason)]
+            observed[category] = (
+                len(selected),
+                float(
+                    pd.to_numeric(
+                        selected["inversion_mmusd"], errors="coerce"
+                    ).sum()
+                ),
+            )
+        declared = cambios.loc[
+            cambios["par_desde"].ge(edition_from)
+            & cambios["edicion"].gt(edition_from)
+            & cambios["edicion"].le(edition_to)
+        ]
+        categories = set(declared["categoria"].astype(str)) | {
+            category for category, (count, _) in observed.items() if count > 0
+        }
+        for category in sorted(categories):
+            declaration = declared.loc[declared["categoria"].eq(category)]
+            declared_count = int(declaration["n_declarado"].sum())
+            declared_capex = float(declaration["capex_mmusd"].sum())
+            observed_count, observed_capex = observed.get(category, (0, 0.0))
+            adjustment = ajustes.loc[
+                ajustes["edicion_desde"].eq(edition_from)
+                & ajustes["edicion_hasta"].eq(edition_to)
+                & ajustes["categoria"].eq(category)
+            ]
+            if len(adjustment) > 1:
+                raise ValueError(
+                    f"ajuste no único para {edition_from}→{edition_to} / {category}"
+                )
+            if adjustment.empty:
+                valid = (
+                    observed_count == declared_count
+                    and abs(observed_capex - declared_capex) < 0.5
+                )
+                exact += int(valid)
+            else:
+                delta_count = int(adjustment.iloc[0]["delta_n"])
+                delta_capex = adjustment.iloc[0]["delta_capex"]
+                valid = observed_count + delta_count == declared_count
+                if pd.notna(delta_capex):
+                    valid = valid and abs(
+                        observed_capex + float(delta_capex) - declared_capex
+                    ) < 0.5
+                adjusted += int(valid)
+            if not valid:
+                raise ValueError(
+                    f"conciliación inválida {edition_from}→{edition_to} / {category}"
+                )
+    return {
+        "n_conciliaciones_exactas": exact,
+        "n_conciliaciones_con_ajuste": adjusted,
+    }
+
+
 def _recalculate(
     panel_path: Path,
     projects_path: Path,
     cpi_path: Path,
     egresos_path: Path | None = None,
     copper_workbook_path: Path | None = None,
+    cambios_path: Path | None = None,
+    ajustes_path: Path | None = None,
 ) -> dict[str, float | int | None]:
     panel = pd.read_parquet(panel_path)
     projects = pd.read_parquet(projects_path)
@@ -727,6 +832,12 @@ def _recalculate(
                 ),
             }
         )
+    if cambios_path is not None and ajustes_path is not None:
+        result.update(
+            _recalculate_reconciliation_counts(
+                panel, egresos, cambios_path, ajustes_path
+            )
+        )
     if copper_workbook_path is not None:
         transitions = pd.DataFrame(transition_rows)
         prices = _verify_prices(
@@ -943,6 +1054,8 @@ def verify_claims_register(
     cpi_path: Path,
     egresos_path: Path | None = None,
     copper_workbook_path: Path | None = None,
+    cambios_path: Path | None = None,
+    ajustes_path: Path | None = None,
 ) -> list[dict[str, object]]:
     """Recalculate and label every claim without reading derived indicators."""
     expected = _recalculate(
@@ -951,6 +1064,8 @@ def verify_claims_register(
         cpi_path,
         egresos_path,
         copper_workbook_path,
+        cambios_path,
+        ajustes_path,
     )
     verified: list[dict[str, object]] = []
     count_claim: dict[str, object] | None = None
@@ -972,7 +1087,9 @@ def verify_claims_register(
         )
         verified.append(item)
     if count_claim is not None:
-        recalculated = sum(item.get("estado") == "verificada" for item in verified)
+        recalculated = 1 + sum(
+            item.get("estado") == "verificada" for item in verified
+        )
         count_claim["valor_recalculado"] = recalculated
         count_claim["estado"] = (
             "verificada"

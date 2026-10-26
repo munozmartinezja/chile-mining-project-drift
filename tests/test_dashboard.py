@@ -51,6 +51,20 @@ def test_labels_cover_export_domains_and_reject_unknown_values() -> None:
         add_export_labels("dim_proyecto", dimension.assign(sector="DESCONOCIDO"))
 
 
+def test_group_export_labels_use_approved_capitalization() -> None:
+    source = pd.DataFrame(
+        {"grupo": ["BASE_PROBABLE", "POSIBLE_POTENCIAL", "TOTAL"]}
+    )
+
+    labeled = add_export_labels("cif", source)
+
+    assert labeled["grupo_etiqueta"].tolist() == [
+        "Base o Probable",
+        "Posible o Potencial",
+        "Total",
+    ]
+
+
 def test_trajectory_and_fan_use_distance_from_first_appearance() -> None:
     rows = []
     for project in range(11):

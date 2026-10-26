@@ -178,8 +178,10 @@ def main() -> None:
         INTERIM_DIR / "panel.parquet",
         INTERIM_DIR / "proyectos.parquet",
         CPI_PATH,
-        REFERENCE_DIR / "egresos_declarados.csv",
-        COPPER_PRICE_PATH,
+        egresos_path=REFERENCE_DIR / "egresos_declarados.csv",
+        copper_workbook_path=COPPER_PRICE_PATH,
+        cambios_path=REFERENCE_DIR / "cambios_cartera_declarados.csv",
+        ajustes_path=REFERENCE_DIR / "ajustes_conciliacion.csv",
     )
     write_claims_register(verified_claims, INTERIM_DIR / "claims.json")
     require_verified(verified_claims)

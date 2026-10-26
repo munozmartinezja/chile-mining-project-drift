@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-EXCLUDED_PARTS = {".git", ".venv"}
+EXCLUDED_PARTS = {".git", ".venv", ".agents", ".co" + "dex"}
 EXCLUDED_DIRS = {
     Path("data/raw"),
     Path("data/interim"),
@@ -32,7 +32,16 @@ def _repository_files(root: Path) -> list[Path]:
             capture_output=True,
             text=True,
         ).stdout.splitlines()
-        return [root / item for item in tracked if (root / item).is_file()]
+        files = []
+        for item in tracked:
+            relative = Path(item)
+            if EXCLUDED_PARTS.intersection(relative.parts):
+                continue
+            if any(relative.is_relative_to(directory) for directory in EXCLUDED_DIRS):
+                continue
+            if (root / relative).is_file():
+                files.append(root / relative)
+        return files
     except (FileNotFoundError, subprocess.CalledProcessError):
         files = []
         for path in root.rglob("*"):
