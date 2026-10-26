@@ -19,7 +19,7 @@ CONDITION_ORDER = {"BASE": 1, "PROBABLE": 2, "POSIBLE": 3, "POTENCIAL": 4}
 OUTCOME_LABELS = {"entro_en_operacion": "Entró en operación", "salio_sin_operar": "Salió sin operar", "censurado": "Sin desenlace observable", "vigente": "En cartera 2025"}
 OUTCOME_ORDER = {"entro_en_operacion": 1, "salio_sin_operar": 2, "censurado": 3, "vigente": 4}
 SOURCE_LABELS = {"nombre": "Confirmado por nombre", "cuadro": "Confirmado por cuadre de capex", "revision": "Revisión documentada", "vigente": "En cartera 2025"}
-GROUP_LABELS = {"BASE_PROBABLE": "Base o probable", "POSIBLE_POTENCIAL": "Posible o potencial", "TOTAL": "Total"}
+GROUP_LABELS = {"BASE_PROBABLE": "Base o Probable", "POSIBLE_POTENCIAL": "Posible o Potencial", "TOTAL": "Total"}
 CATEGORY_LABELS = {"entraron_operacion": "Entraron en operación", "reestructuracion": "Salieron por reestructuración", "nuevos": "Ingresaron", "metodologia": "Salieron por metodología"}
 
 

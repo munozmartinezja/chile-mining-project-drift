@@ -118,6 +118,11 @@ def build_claims_register(
     }
     if projects is not None and egresos is not None and conciliacion is not None:
         outcomes = projects["desenlace"].value_counts()
+        exact_reconciliations = (
+            conciliacion["delta_n"].eq(0)
+            & conciliacion["compara_capex"].eq(True)
+            & conciliacion["delta_capex"].eq(0)
+        )
         values.update(
             {
                 "n_desenlace_operacion": int(outcomes.get("entro_en_operacion", 0)),
@@ -132,6 +137,10 @@ def build_claims_register(
                     conciliacion[["edicion_desde", "edicion_hasta"]]
                     .drop_duplicates()
                     .shape[0]
+                ),
+                "n_conciliaciones_exactas": int(exact_reconciliations.sum()),
+                "n_conciliaciones_con_ajuste": int(
+                    (~exact_reconciliations).sum()
                 ),
             }
         )
@@ -462,6 +471,16 @@ def build_claims_register(
             "pares",
             "Conteo de pares distintos en la conciliación de desenlaces.",
         ),
+        "n_conciliaciones_exactas": (
+            "Combinaciones conciliadas sin ajuste",
+            "combinaciones",
+            "Filas par × categoría donde lo observado coincide con el cuadro oficial sin ajuste documentado (conteo y capex).",
+        ),
+        "n_conciliaciones_con_ajuste": (
+            "Combinaciones conciliadas con ajuste documentado",
+            "combinaciones",
+            "Filas par × categoría con ajuste en ajustes_conciliacion.csv (conteo o capex no comparable).",
+        ),
         "n_cohorte_incidente": (
             "Proyectos de la cohorte incidente",
             "proyectos",
@@ -577,14 +596,16 @@ def build_claims_register(
                     "estado": "informativa",
                 }
             )
-    verified_count = sum(item.get("estado") != "informativa" for item in claims)
+    verified_count = 1 + sum(
+        item.get("estado") != "informativa" for item in claims
+    )
     claims.append(
         {
             "id": "n_cifras_verificadas",
             "descripcion": "Cifras verificadas",
             "valor": verified_count,
             "unidad": "cifras",
-            "calculo": "Conteo de cifras verificables, excluida esta misma.",
+            "calculo": "Conteo de cifras verificables, incluida esta misma.",
         }
     )
     return claims

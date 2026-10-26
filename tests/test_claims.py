@@ -154,13 +154,46 @@ def test_outcome_claims_are_recalculated_from_panel_and_references(
             {
                 "edicion_desde": 2020,
                 "edicion_hasta": 2021,
+                "categoria": "entraron_operacion",
+                "delta_n": 0,
+                "delta_capex": 0.0,
+                "compara_capex": True,
+                "estado": "ok",
+            },
+            {
+                "edicion_desde": 2020,
+                "edicion_hasta": 2021,
+                "categoria": "reestructuracion",
+                "delta_n": 0,
+                "delta_capex": 0.0,
+                "compara_capex": True,
+                "estado": "ok",
+            },
+            {
+                "edicion_desde": 2020,
+                "edicion_hasta": 2021,
+                "categoria": "metodologia",
+                "delta_n": 1,
+                "delta_capex": 0.0,
+                "compara_capex": True,
+                "estado": "ok",
+            },
+            {
+                "edicion_desde": 2020,
+                "edicion_hasta": 2021,
                 "categoria": "nuevos",
+                "delta_n": 0,
+                "delta_capex": 0.0,
+                "compara_capex": True,
                 "estado": "ok",
             },
             {
                 "edicion_desde": 2021,
                 "edicion_hasta": 2025,
                 "categoria": "nuevos",
+                "delta_n": 0,
+                "delta_capex": 0.0,
+                "compara_capex": True,
                 "estado": "ok",
             },
         ]
@@ -172,9 +205,37 @@ def test_outcome_claims_are_recalculated_from_panel_and_references(
     panel_path = tmp_path / "panel.parquet"
     projects_path = tmp_path / "proyectos.parquet"
     egresos_path = tmp_path / "egresos.csv"
+    cambios_path = tmp_path / "cambios.csv"
+    ajustes_path = tmp_path / "ajustes.csv"
     panel.to_parquet(panel_path, index=False)
     projects.to_parquet(projects_path, index=False)
     egresos.to_csv(egresos_path, index=False)
+    pd.DataFrame(
+        [
+            [2021, 2020, "entraron_operacion", 1, 100.0],
+            [2021, 2020, "reestructuracion", 1, 100.0],
+            [2021, 2020, "metodologia", 2, 100.0],
+            [2021, 2020, "nuevos", 1, 100.0],
+            [2025, 2021, "nuevos", 0, 0.0],
+        ],
+        columns=[
+            "edicion",
+            "par_desde",
+            "categoria",
+            "n_declarado",
+            "capex_mmusd",
+        ],
+    ).to_csv(cambios_path, index=False)
+    pd.DataFrame(
+        [[2020, 2021, "metodologia", 1, 0.0]],
+        columns=[
+            "edicion_desde",
+            "edicion_hasta",
+            "categoria",
+            "delta_n",
+            "delta_capex",
+        ],
+    ).to_csv(ajustes_path, index=False)
 
     indicators = build_indicator_tables(panel, projects, cpi_path, egresos)
     claims = build_claims_register(
@@ -189,6 +250,8 @@ def test_outcome_claims_are_recalculated_from_panel_and_references(
         projects_path,
         cpi_path,
         egresos_path,
+        cambios_path=cambios_path,
+        ajustes_path=ajustes_path,
     )
     values = {item["id"]: item["valor"] for item in verified}
 
@@ -198,6 +261,8 @@ def test_outcome_claims_are_recalculated_from_panel_and_references(
     assert values["n_desenlace_censurado"] == 1
     assert values["pct_salidas_confirmadas_por_nombre"] == pytest.approx(100 / 3)
     assert values["n_pares_conciliados"] == 2
+    assert values["n_conciliaciones_exactas"] == 4
+    assert values["n_conciliaciones_con_ajuste"] == 1
     assert values["n_salidas_umbral90_operacion"] == 1
     assert values["n_salidas_umbral90_sin_operar"] == 1
 
@@ -209,10 +274,130 @@ def test_outcome_claims_are_recalculated_from_panel_and_references(
         projects_path,
         cpi_path,
         egresos_path,
+        cambios_path=cambios_path,
+        ajustes_path=ajustes_path,
     )
     assert failed[0]["estado"] == "fallida"
     with pytest.raises(ValueError, match="cifras no verificadas"):
         require_verified(failed)
+
+
+def test_reconciliation_counts_are_recalculated_from_primary_references(
+    tmp_path: Path,
+) -> None:
+    panel = pd.DataFrame(
+        [
+            ["A", 2020, "A", "A", 2030, 100.0, "BASE", "Oro", "Atacama"],
+            ["S", 2020, "S", "S", 2030, 50.0, "BASE", "Oro", "Atacama"],
+            ["S", 2021, "S", "S", 2030, 50.0, "BASE", "Oro", "Atacama"],
+            ["N", 2021, "N", "N", 2030, 200.0, "BASE", "Oro", "Atacama"],
+        ],
+        columns=[
+            "project_id",
+            "edicion",
+            "proyecto_raw",
+            "nombre_norm",
+            "puesta_en_marcha",
+            "inversion_mmusd",
+            "condicion",
+            "sector",
+            "region",
+        ],
+    )
+    projects = pd.DataFrame(
+        [
+            ["A", "entro_en_operacion"],
+            ["S", "vigente"],
+            ["N", "vigente"],
+        ],
+        columns=["project_id", "desenlace"],
+    )
+    panel_path = tmp_path / "panel.parquet"
+    projects_path = tmp_path / "projects.parquet"
+    cpi_path = tmp_path / "cpi.csv"
+    egresos_path = tmp_path / "egresos.csv"
+    cambios_path = tmp_path / "cambios.csv"
+    ajustes_path = tmp_path / "ajustes.csv"
+    panel.to_parquet(panel_path, index=False)
+    projects.to_parquet(projects_path, index=False)
+    pd.DataFrame(
+        {"anio": [2020, 2021, 2025], "s1": [100, 100, 100], "s2": [100, 100, 100]}
+    ).to_csv(cpi_path, index=False)
+    pd.DataFrame(
+        [
+            [2020, 2021, "A", "operacion", "nombre"],
+            [2021, 2025, "S", "no_declarado", "revision"],
+            [2021, 2025, "N", "no_declarado", "revision"],
+        ],
+        columns=[
+            "edicion_desde",
+            "edicion_hasta",
+            "proyecto_raw",
+            "motivo",
+            "fuente",
+        ],
+    ).to_csv(egresos_path, index=False)
+    pd.DataFrame(
+        [
+            [2021, 2020, "entraron_operacion", 2, 100.0],
+            [2021, 2020, "nuevos", 1, 200.0],
+        ],
+        columns=[
+            "edicion",
+            "par_desde",
+            "categoria",
+            "n_declarado",
+            "capex_mmusd",
+        ],
+    ).to_csv(cambios_path, index=False)
+    pd.DataFrame(
+        [[2020, 2021, "entraron_operacion", 1, None]],
+        columns=[
+            "edicion_desde",
+            "edicion_hasta",
+            "categoria",
+            "delta_n",
+            "delta_capex",
+        ],
+    ).to_csv(ajustes_path, index=False)
+    claims = [
+        {"id": "n_conciliaciones_exactas", "valor": 1},
+        {"id": "n_conciliaciones_con_ajuste", "valor": 1},
+        {"id": "n_cifras_verificadas", "valor": 3},
+    ]
+
+    verified = verify_claims_register(
+        claims,
+        panel_path,
+        projects_path,
+        cpi_path,
+        egresos_path,
+        cambios_path=cambios_path,
+        ajustes_path=ajustes_path,
+    )
+
+    assert {item["estado"] for item in verified} == {"verificada"}
+
+    pd.DataFrame(
+        [[2020, 2021, "entraron_operacion", 0, None]],
+        columns=[
+            "edicion_desde",
+            "edicion_hasta",
+            "categoria",
+            "delta_n",
+            "delta_capex",
+        ],
+    ).to_csv(ajustes_path, index=False)
+    with pytest.raises(ValueError, match="2020.*2021.*entraron_operacion"):
+        verify_claims_register(
+            claims,
+            panel_path,
+            projects_path,
+            cpi_path,
+            egresos_path,
+            cambios_path=cambios_path,
+            ajustes_path=ajustes_path,
+        )
 
 
 def test_verifier_does_not_import_indicator_or_claim_modules() -> None:
@@ -526,7 +711,7 @@ def test_altered_year_four_dashboard_claim_is_detected(tmp_path: Path) -> None:
         {"id": "mediana_deriva_anio4", "valor": 99.0},
         {"id": "p90_deriva_anio4", "valor": 8.1},
         {"id": "n_proyectos_anio4", "valor": 10},
-        {"id": "n_cifras_verificadas", "valor": 3},
+        {"id": "n_cifras_verificadas", "valor": 4},
     ]
     verified = verify_claims_register(claims, panel_path, projects_path, cpi_path)
     states = {item["id"]: item["estado"] for item in verified}
