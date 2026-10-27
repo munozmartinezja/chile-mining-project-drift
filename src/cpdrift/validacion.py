@@ -32,7 +32,7 @@ class SuccessiveValidationTables:
     bootstrap: dict[str, float]
 
 
-CUTS = (2018, 2019, 2020, 2021, 2023, 2024)
+CUTS = (2018, 2019, 2020, 2021, 2022, 2023, 2024)
 VALIDATION_BOOTSTRAP_SEED = 20261022
 VALIDATION_BOOTSTRAP_REPLICATES = 1_000
 
@@ -178,7 +178,7 @@ def build_successive_validation(
     bootstrap_replicates: int = VALIDATION_BOOTSTRAP_REPLICATES,
     seed: int = VALIDATION_BOOTSTRAP_SEED,
 ) -> SuccessiveValidationTables:
-    """Evaluate expanding-window models on six successive edition cuts."""
+    """Evaluate expanding-window models on seven successive edition cuts."""
     specifications = {
         "completo": EXTENDED_TERMS,
         "sin_precio": EXTENDED_TERMS.replace(" + log_precio_cu", ""),

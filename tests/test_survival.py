@@ -64,7 +64,7 @@ def test_endpoint_rules_exclude_zero_and_use_next_data_edition() -> None:
     endpoints = prepare_survival_endpoints(projects).set_index("project_id")
 
     assert "ZERO" not in endpoints.index
-    assert endpoints.loc["GAP", "t"] == 4
+    assert endpoints.loc["GAP", "t"] == 3
     assert endpoints.loc["GAP", "evento"] == 1
     assert endpoints.loc["CURRENT", "t"] == 5
     assert endpoints.loc["CURRENT", "evento"] == 0

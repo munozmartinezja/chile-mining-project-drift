@@ -15,8 +15,8 @@ def regression_scenarios(data: pd.DataFrame) -> pd.DataFrame:
     """Fit expanded OLS under the three requested samples."""
     scenarios = {
         "principal": (data, OLS_EXTENDED_FORMULA),
-        "sin_par_2021_2023": (
-            data.loc[~data["ed_prev"].eq(2021)],
+        "sin_2022": (
+            data.loc[~(data["ed_prev"].eq(2022) | data["ed_next"].eq(2022))],
             OLS_EXTENDED_FORMULA,
         ),
         "sin_estatales": (

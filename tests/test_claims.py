@@ -87,6 +87,15 @@ def test_claims_and_independent_verification_agree(tmp_path: Path) -> None:
 
     bundle = build_indicator_tables(panel, projects, cpi_path)
     claims = build_claims_register(bundle)
+    assert all(item["descripcion"] != item["id"].replace("_", " ") for item in claims)
+    assert all(item["unidad"] != "valor" for item in claims)
+    combination_ids = {
+        item["id"] for item in claims if item["unidad"] == "combinaciones"
+    }
+    assert combination_ids <= {
+        "n_conciliaciones_exactas",
+        "n_conciliaciones_con_ajuste",
+    }
     verified = verify_claims_register(claims, panel_path, projects_path, cpi_path)
 
     assert {item["estado"] for item in verified} == {"verificada"}
@@ -617,7 +626,7 @@ def test_robustness_claims_are_registered() -> None:
                 "valor": value,
                 "n": 10,
             }
-            for scenario in ("principal", "sin_par_2021_2023", "sin_estatales")
+            for scenario in ("principal", "sin_2022", "sin_estatales")
             for metric, value in ((f"coef:{potential}", 1.0), (f"p:{potential}", 0.01))
         ]
     )
@@ -633,7 +642,7 @@ def test_robustness_claims_are_registered() -> None:
 
     assert values["ols_amp_coef_precio_cu"] == 2.0
     assert values["auc_corte_unico_completo"] == 0.7
-    assert values["n_escenarios_potencial_robusto"] == 3
+    assert values["n_escenarios_potencial_positivo_p05"] == 3
     assert values["pct_regla_fecha_discrepante"] == 50
 
 

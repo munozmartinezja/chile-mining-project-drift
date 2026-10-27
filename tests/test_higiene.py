@@ -35,10 +35,6 @@ def _repository_files(root: Path) -> list[Path]:
         files = []
         for item in tracked:
             relative = Path(item)
-            if EXCLUDED_PARTS.intersection(relative.parts):
-                continue
-            if any(relative.is_relative_to(directory) for directory in EXCLUDED_DIRS):
-                continue
             if (root / relative).is_file():
                 files.append(root / relative)
         return files

@@ -142,12 +142,30 @@ def _aggregate_name(value: object) -> bool:
     )
 
 
-def apply_manual_regions(frame: pd.DataFrame, path: Path) -> pd.DataFrame:
+def apply_manual_regions(frame: pd.DataFrame, path: Path, raw_dir: Path) -> pd.DataFrame:
     """Fill missing regions through unique edition/name anchors."""
-    manual = pd.read_csv(path)
-    required = {"edicion", "proyecto_raw", "region", "nota"}
-    if set(manual.columns) != required:
+    from .declared import citation_in_pages
+    from .pdftext import get_pages_text
+
+    manual = pd.read_csv(path, dtype=str, keep_default_na=False)
+    required = [
+        "edicion", "proyecto_raw", "region", "fuente_edicion", "pagina", "frase", "nota"
+    ]
+    if manual.columns.tolist() != required:
         raise ValueError("esquema inválido en regiones_manual.csv")
+    pages_by_edition: dict[int, list[str]] = {}
+    for row in manual.itertuples(index=False):
+        source_edition = int(row.fuente_edicion)
+        pages = pages_by_edition.setdefault(
+            source_edition,
+            get_pages_text(raw_dir / f"cartera_{source_edition}.pdf"),
+        )
+        found, searched = citation_in_pages(pages, row.frase, int(row.pagina))
+        if not found:
+            raise ValueError(
+                f"cita regional no encontrada para {row.edicion} / {row.proyecto_raw!r} "
+                f"en páginas {searched}"
+            )
     result = frame.copy()
     if "region_imputada" not in result:
         result["region_imputada"] = False

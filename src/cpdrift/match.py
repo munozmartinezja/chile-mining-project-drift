@@ -11,6 +11,7 @@ from typing import Any
 import pandas as pd
 from rapidfuzz import fuzz
 
+from .ediciones import DATA_EDITIONS
 from .normalize import normalize_name
 
 MANUAL_COLUMNS = [
@@ -20,9 +21,10 @@ MANUAL_COLUMNS = [
     "destino_edicion",
     "destino_proyecto_raw",
     "nota",
+    "evidencia",
 ]
 MANUAL_DECISIONS = {"mismo", "distinto", "nuevo"}
-EDITION_SEQUENCE = [*range(2014, 2022), 2023, 2024, 2025]
+EDITION_SEQUENCE = DATA_EDITIONS
 ROMAN_NUMBERS = {
     "I": 1,
     "II": 2,
@@ -61,7 +63,9 @@ def ensure_manual_file(path: Path) -> None:
 
 
 def _manual_decisions(
-    path: Path, rows: pd.DataFrame
+    path: Path,
+    rows: pd.DataFrame,
+    weak_evidence: frozenset[str] = frozenset(),
 ) -> dict[tuple[int, str], dict[str, str]]:
     ensure_manual_file(path)
     manual = pd.read_csv(path, dtype=str).fillna("")
@@ -87,6 +91,22 @@ def _manual_decisions(
         action = decision["decision"]
         if action not in MANUAL_DECISIONS:
             raise ValueError(f"decisión manual inválida: {action!r}")
+        evidence = decision["evidencia"]
+        allowed_evidence = {
+            "nombre", "texto_cochilco", "operador_capex", "conciliacion", "no_aplica"
+        }
+        if evidence not in allowed_evidence:
+            raise ValueError(f"evidencia manual inválida: {evidence!r}")
+        if (action == "mismo") == (evidence == "no_aplica"):
+            raise ValueError(
+                f"evidencia incompatible con decisión {action!r}: {evidence!r}"
+            )
+        if action == "mismo" and evidence in weak_evidence:
+            decision = decision.copy()
+            decision["decision"] = "nuevo"
+            decision["destino_edicion"] = ""
+            decision["destino_proyecto_raw"] = ""
+            action = "nuevo"
         if action in {"mismo", "distinto"}:
             try:
                 target_edition = int(decision["destino_edicion"])
@@ -286,12 +306,13 @@ def assign_project_ids(
     frame: pd.DataFrame,
     manual_path: Path,
     revision_path: Path,
+    weak_evidence: frozenset[str] = frozenset(),
 ) -> tuple[pd.DataFrame, list[dict[str, Any]], list[dict[str, Any]]]:
     """Assign stable IDs by comparing every row with all prior project histories."""
     rows = frame.copy().reset_index(drop=True)
     rows["_position"] = range(len(rows))
     rows = rows.sort_values(["edicion", "_position"], kind="stable").reset_index(drop=True)
-    manual = _manual_decisions(manual_path, rows)
+    manual = _manual_decisions(manual_path, rows, weak_evidence)
     histories: dict[str, list[pd.Series]] = {}
     anchor_ids: dict[tuple[int, str], str] = {}
     provisional_ids: set[str] = set()

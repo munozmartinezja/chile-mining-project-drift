@@ -7,7 +7,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-DATA_EDITIONS = [*range(2014, 2022), 2023, 2024, 2025]
+from .ediciones import DATA_EDITIONS
+
 HORIZONS = (2, 4, 6)
 BOOTSTRAP_REPLICATES = 1_000
 BOOTSTRAP_SEED = 20261021

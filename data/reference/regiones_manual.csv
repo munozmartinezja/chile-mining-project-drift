@@ -1,5 +1,5 @@
-edicion,proyecto_raw,region,nota
-2014,Valle Central Expansión,O'Higgins,faena en la Región de O'Higgins; sin región en ninguna edición del catastro
-2014,Nuevo Nivel Mina,O'Higgins,División El Teniente; sin región en ninguna edición del catastro
-2023,"Aumento de Capacidad Planta Concentradora Mantos Blancos, Fase II (Desembotellamiento concentradora Mantos Blancos Fase II)",Antofagasta,faena Mantos Blancos; sin región en ninguna edición del catastro
-2023,Aumento de Capacidad de Molienda QB2,Tarapacá,faena Quebrada Blanca; sin región en ninguna edición del catastro
+edicion,proyecto_raw,region,fuente_edicion,pagina,frase,nota
+2014,Valle Central Expansión,O'Higgins,2014,52,Valle Central Expansión Minera Valle Central Med Min - Cu O'Higgins,la tabla del catastro declara la región en la fila; la extracción automática no la captura
+2014,Nuevo Nivel Mina,O'Higgins,2014,52,Nuevo Nivel Mina Codelco El Teniente Estatal - Cu O'Higgins,la tabla del catastro declara la región en la fila; la extracción automática no la captura
+2023,"Aumento de Capacidad Planta Concentradora Mantos Blancos, Fase II (Desembotellamiento concentradora Mantos Blancos Fase II)",Antofagasta,2023,19,2025 Concentradora Mantos Mantos Copper Expansión Antofagasta 16.500 90,la tabla 1 de 2023 no trae región; la tabla de capacidad (p. 19) sí
+2023,Aumento de Capacidad de Molienda QB2,Tarapacá,2023,19,2027 Expansión Tarapacá 120.000 3.000,la tabla 1 de 2023 no trae región; la tabla de capacidad (p. 19) sí

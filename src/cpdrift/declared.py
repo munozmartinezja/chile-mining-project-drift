@@ -176,10 +176,7 @@ def reconcile(frame: pd.DataFrame, finding: dict[str, Any]) -> dict[str, Any]:
         and extracted_sum is not None
         and abs(extracted_sum - declared_total) / declared_total <= 0.005
     )
-    if edition == 2022:
-        status = "sin_filas"
-    else:
-        status = "ok" if rows_ok and sum_ok else "revisar"
+    status = "ok" if rows_ok and sum_ok else "revisar"
     return {
         "edicion": edition,
         "filas": row_count,

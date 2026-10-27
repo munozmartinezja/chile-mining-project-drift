@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pandas as pd
 
-DATA_EDITIONS = [*range(2014, 2022), 2023, 2024, 2025]
+from .ediciones import DATA_EDITIONS
+
 AGGREGATE_PREFIX = "OTROS"
 AGGREGATE_CONTAINS = "PROYECTOS DE INFORMACION"
 AGGREGATE_EXACT_NAMES = frozenset({"PROYECTOS FURE", "TRANQUES"})
