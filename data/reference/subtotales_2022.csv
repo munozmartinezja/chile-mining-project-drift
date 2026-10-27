@@ -1,0 +1,13 @@
+dimension,valor,n_declarado,capex_mmusd,pagina,frase
+condicion,BASE,17,27155,13,17 iniciativas en condición base con una inversión de US$ 27.155 millones
+condicion,PROBABLE,17,16243,13,17 proyectos en condición probable avaluados en US$ 16.243 millones
+condicion,POSIBLE,11,10320,13,11 proyectos en condición posible avaluados en US$ 10.320 millones
+condicion,POTENCIAL,8,19938,13,"8 iniciativas en condición potencial, avaluadas en US$ 19.938 millones"
+sector,Estatal - Cu,6,17824,12,CODELCO 6 17.824
+sector,Gran Min. - Cu,25,42262,12,Gran minería privada 25 42.262
+sector,Med. Min. - Cu,7,2586,12,7 2.586 3 927 3 934 1 725
+sector,Plantas Met.,3,2601,12,Plantas industriales 3 2.601
+sector,Oro,5,2747,12,Oro y plata 5 2.747
+sector,Hierro,2,2972,12,Hierro 2 2.972
+sector,Litio,4,2314,12,Litio 4 2.314
+sector,Min. Ind.,1,350,13,1 350 - - - - 1 350 - -

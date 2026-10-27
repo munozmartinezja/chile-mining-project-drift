@@ -125,7 +125,7 @@ def test_sensitivity_potential_and_reconciliation_matrix() -> None:
                 "metrica": f"{metric}:{term}",
                 "valor": value,
             }
-            for scenario in ("principal", "sin_par_2021_2023", "sin_estatales")
+            for scenario in ("principal", "sin_2022", "sin_estatales")
             for metric, value in (("coef", 1.2), ("p", 0.03))
         ]
     )

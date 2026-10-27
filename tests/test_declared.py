@@ -149,13 +149,13 @@ def test_reconciliation_without_declared_count_uses_only_sum() -> None:
     assert declared.reconcile(frame, finding)["estado"] == "ok"
 
 
-def test_2022_reconciliation_is_without_rows() -> None:
+def test_2022_reconciliation_is_evaluated_like_other_editions() -> None:
     frame = pd.DataFrame(columns=["edicion", "inversion_mmusd"])
     finding = declared.verify_reference(
         Path("missing.pdf"), reference_row(edicion=2022, n_declarado=53)
     )
 
-    assert declared.reconcile(frame, finding)["estado"] == "sin_filas"
+    assert declared.reconcile(frame, finding)["estado"] == "revisar"
 
 
 @pytest.mark.parametrize(

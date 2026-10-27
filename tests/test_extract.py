@@ -66,3 +66,49 @@ def test_obsolete_extraction_correction_raises(tmp_path) -> None:
         match=r"corrección obsoleta.*2015.*operador_raw.*VALOR AUSENTE",
     ):
         apply_corrections(frame, corrections_path)
+
+
+def test_2022_transcription_uses_exact_schema_and_legacy_record(tmp_path) -> None:
+    path = tmp_path / "cartera_2022_transcrita.csv"
+    pd.DataFrame(
+        [[2022, "2028-2029", "Proyecto", "Operador", "Cobre", "Atacama",
+          "Nuevo", "Base", "Factibilidad", "Sin EIA", "2.696", 10]],
+        columns=extract.TRANSCRIPTION_2022_COLUMNS,
+    ).to_csv(path, index=False)
+
+    table, provenance = extract.extract_2022_transcription(path)
+
+    assert table.loc[0, "inversion_mmusd"] == 2696
+    assert table.loc[0, "puesta_en_marcha"] == 2028
+    assert table.loc[0, "puesta_en_marcha_raw"] == "2028-2029"
+    assert table.loc[0, "rotulo_inversion"] == "Inversión (MMUS$)"
+    assert provenance == {"pages": [10], "method": "transcripcion"}
+
+
+def test_2022_transcription_gate_checks_exact_subtotals_and_citations(
+    tmp_path, monkeypatch
+) -> None:
+    extracted = pd.DataFrame(
+        {
+            "edicion": [2022] * 53,
+            "condicion": ["Base"] * 53,
+            "sector": ["Cobre"] * 53,
+            "inversion_mmusd": [1.0] * 53,
+        }
+    )
+    subtotals = tmp_path / "subtotales.csv"
+    pd.DataFrame(
+        [
+            ["condicion", "Base", 53, 53, 10, "total base"],
+            ["sector", "Cobre", 53, 53, 10, "total cobre"],
+        ],
+        columns=["dimension", "valor", "n_declarado", "capex_mmusd", "pagina", "frase"],
+    ).to_csv(subtotals, index=False)
+    monkeypatch.setattr(
+        extract, "get_pages_text", lambda _: [""] * 9 + ["total base total cobre"]
+    )
+
+    extract.verify_transcription_2022(extracted, subtotals, tmp_path)
+
+    with pytest.raises(ValueError, match="53 filas"):
+        extract.verify_transcription_2022(extracted.iloc[:-1], subtotals, tmp_path)

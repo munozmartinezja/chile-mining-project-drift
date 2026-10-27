@@ -70,6 +70,7 @@ def build_claims_register(
     descriptivas: dict[str, pd.DataFrame] | None = None,
     visuales: dict[str, pd.DataFrame] | None = None,
     sensibilidad: pd.DataFrame | None = None,
+    sensibilidad_publicable: pd.DataFrame | None = None,
     regla_fecha: pd.DataFrame | None = None,
 ) -> list[dict[str, object]]:
     """Build the auditable list of required headline figures."""
@@ -344,7 +345,7 @@ def build_claims_register(
         values.update(
             {
                 "n_escenarios_regresion": int(regression["escenario"].nunique()),
-                "n_escenarios_potencial_robusto": int(
+                "n_escenarios_potencial_positivo_p05": int(
                     sum(
                         coefficients.loc[item] > 0 and p_values.loc[item] < 0.05
                         for item in common
@@ -352,6 +353,21 @@ def build_claims_register(
                 ),
             }
         )
+    if sensibilidad_publicable is not None:
+        scenario_names = ", ".join(sensibilidad_publicable["escenario"].astype(str))
+        for metric in (
+            "cif_op_6_base_probable",
+            "cif_sal_6_base_probable",
+            "cif_op_6_posible_potencial",
+            "cif_sal_6_posible_potencial",
+            "ols_coef_potencial",
+        ):
+            values[f"sens_min_{metric}"] = float(
+                sensibilidad_publicable[metric].min()
+            )
+            values[f"sens_max_{metric}"] = float(
+                sensibilidad_publicable[metric].max()
+            )
     if regla_fecha is not None:
         values["pct_regla_fecha_discrepante"] = (
             None
@@ -373,7 +389,7 @@ def build_claims_register(
         "n_proyectos": ("Proyectos no agregados", "proyectos", "Conteo de project_id no agregados."),
         "n_filas_agregadas_excluidas": (
             "Filas agregadas excluidas",
-            "filas",
+            "proyectos",
             "Conteo de apariciones cuyo nombre identifica un agregado.",
         ),
         "n_transiciones": (
@@ -438,12 +454,12 @@ def build_claims_register(
         ),
         "n_salidas_umbral90_sin_operar": (
             "Salidas sin operar sobre umbral homogéneo",
-            "salidas",
+            "proyectos",
             "Suma de salidas por reestructuración con capex nominal previo de al menos 90.",
         ),
         "n_salidas_umbral90_operacion": (
             "Salidas a operación sobre umbral homogéneo",
-            "salidas",
+            "proyectos",
             "Suma de salidas a operación con capex nominal previo de al menos 90.",
         ),
         "n_desenlace_operacion": (
@@ -468,7 +484,7 @@ def build_claims_register(
         ),
         "n_pares_conciliados": (
             "Pares de ediciones conciliados",
-            "pares",
+            "pares de ediciones",
             "Conteo de pares distintos en la conciliación de desenlaces.",
         ),
         "n_conciliaciones_exactas": (
@@ -535,24 +551,74 @@ def build_claims_register(
         "ols_amp_p_precio_cu": ("p precio cobre OLS ampliado", "probabilidad", "Valor p agrupado."),
         "ols_amp_coef_estatal": ("Coeficiente estatal OLS ampliado", "años por año", "Coeficiente del indicador estatal."),
         "ols_amp_p_estatal": ("p estatal OLS ampliado", "probabilidad", "Valor p agrupado."),
-        "auc_corte_unico_completo": ("AUC temporal modelo completo, corte único", "proporción", "AUC Mann-Whitney en prueba."),
-        "auc_corte_unico_solo_condicion": ("AUC temporal solo condición, corte único", "proporción", "AUC Mann-Whitney en prueba."),
-        "brier_corte_unico_completo": ("Brier temporal modelo completo, corte único", "puntaje", "Media del error cuadrático probabilístico."),
-        "brier_corte_unico_prevalencia": ("Brier temporal prevalencia, corte único", "puntaje", "Media del error cuadrático probabilístico."),
+        "auc_corte_unico_completo": ("AUC temporal modelo completo, corte único", "AUC", "AUC Mann-Whitney en prueba."),
+        "auc_corte_unico_solo_condicion": ("AUC temporal solo condición, corte único", "AUC", "AUC Mann-Whitney en prueba."),
+        "brier_corte_unico_completo": ("Brier temporal modelo completo, corte único", "puntaje de Brier", "Media del error cuadrático probabilístico."),
+        "brier_corte_unico_prevalencia": ("Brier temporal prevalencia, corte único", "puntaje de Brier", "Media del error cuadrático probabilístico."),
         "calibracion_corte_unico_completo": ("Calibración modelo completo, corte único", "proporción", "Media predicha menos tasa observada."),
         "n_train_corte_unico": ("Entrenamiento del corte único", "transiciones", "Conteo con ed_prev hasta 2019."),
         "n_test_corte_unico": ("Prueba del corte único", "transiciones", "Conteo con ed_prev desde 2020."),
         "n_escenarios_regresion": ("Escenarios de regresión", "escenarios", "Conteo de escenarios OLS ampliados."),
-        "n_escenarios_potencial_robusto": ("Escenarios con asociación potencial robusta", "escenarios", "Coeficiente positivo con p menor a 0,05."),
+        "n_escenarios_potencial_positivo_p05": (
+            "Escenarios de regresión con coeficiente Potencial positivo y p < 0,05",
+            "escenarios",
+            "Conteo entre principal, sin 2022 y sin empresas estatales.",
+        ),
         "pct_regla_fecha_discrepante": ("Discrepancia de regla de fecha", "porcentaje", "Salidas cuya regla de fecha contradice lo declarado."),
+        "pct_atraso_base": ("Transiciones Base con atraso", "porcentaje", "Proporción de transiciones Base con aumento del año previsto."),
+        "pct_atraso_probable": ("Transiciones Probable con atraso", "porcentaje", "Proporción de transiciones Probable con aumento del año previsto."),
+        "pct_atraso_posible": ("Transiciones Posible con atraso", "porcentaje", "Proporción de transiciones Posible con aumento del año previsto."),
+        "pct_atraso_potencial": ("Transiciones Potencial con atraso", "porcentaje", "Proporción de transiciones Potencial con aumento del año previsto."),
+        "pct_transiciones_sin_cambio": ("Transiciones sin cambio de fecha", "porcentaje", "Proporción con delta de puesta en marcha igual a cero."),
+        "mediana_capex_inicial_real": ("Capex inicial real mediano", "MMUS$ de 2025", "Mediana del capex inicial deflactado."),
+        "pct_proyectos_cobre": ("Proyectos del sector cobre", "porcentaje", "Proporción de proyectos en sectores de cobre."),
+        "pct_proyectos_antofagasta": ("Proyectos ubicados en Antofagasta", "porcentaje", "Proporción de proyectos con región Antofagasta."),
+        "n_ediciones": ("Ediciones de cartera analizadas", "ediciones", "Conteo de ediciones presentes en el panel."),
+        "min_proyectos_edicion": ("Mínimo de proyectos por edición", "proyectos", "Mínimo del conteo anual no agregado."),
+        "max_proyectos_edicion": ("Máximo de proyectos por edición", "proyectos", "Máximo del conteo anual no agregado."),
+        "auc_agregado_completo": ("AUC agregado del modelo completo", "AUC", "AUC sobre predicciones fuera de muestra concatenadas."),
+        "auc_agregado_completo_ic_inf": ("Límite inferior del AUC agregado", "AUC", "Percentil 2,5 del bootstrap por proyecto."),
+        "auc_agregado_completo_ic_sup": ("Límite superior del AUC agregado", "AUC", "Percentil 97,5 del bootstrap por proyecto."),
+        "auc_agregado_solo_condicion": ("AUC agregado usando solo condición", "AUC", "AUC fuera de muestra del modelo reducido."),
+        "brier_agregado_completo": ("Brier agregado del modelo completo", "puntaje de Brier", "Error cuadrático probabilístico agregado."),
+        "brier_agregado_prevalencia": ("Brier agregado del modelo de prevalencia", "puntaje de Brier", "Error cuadrático probabilístico del referente."),
+        "mejora_brier_agregada": ("Mejora agregada del puntaje de Brier", "puntaje de Brier", "Brier de prevalencia menos Brier completo."),
+        "mejora_brier_agregada_ic_inf": ("Límite inferior de la mejora de Brier", "puntaje de Brier", "Percentil 2,5 del bootstrap por proyecto."),
+        "mejora_brier_agregada_ic_sup": ("Límite superior de la mejora de Brier", "puntaje de Brier", "Percentil 97,5 del bootstrap por proyecto."),
+        "calibracion_agregada_completo": ("Calibración agregada del modelo completo", "proporción", "Probabilidad media menos frecuencia observada."),
+        "auc_corte_min": ("AUC mínimo entre cortes temporales", "AUC", "Mínimo del AUC del modelo completo entre cortes."),
+        "auc_corte_max": ("AUC máximo entre cortes temporales", "AUC", "Máximo del AUC del modelo completo entre cortes."),
+        "n_cortes": ("Cortes de validación temporal", "cortes", "Conteo de cortes sucesivos evaluados."),
+        "n_test_agregado": ("Observaciones agregadas de prueba", "transiciones", "Conteo de predicciones fuera de muestra agregadas."),
+        "mediana_deriva_anio4": ("Deriva mediana al cuarto año", "años", "Mediana entre proyectos observados al cuarto año."),
+        "p90_deriva_anio4": ("Percentil 90 de deriva al cuarto año", "años", "Percentil 90 entre proyectos observados al cuarto año."),
+        "n_proyectos_anio4": ("Proyectos observados al cuarto año", "proyectos", "Conteo que sustenta el abanico al cuarto año."),
     }
+    for metric, description, unit in (
+        ("cif_op_6_base_probable", "CIF de operación a seis años en Base/Probable", "proporción"),
+        ("cif_sal_6_base_probable", "CIF de salida a seis años en Base/Probable", "proporción"),
+        ("cif_op_6_posible_potencial", "CIF de operación a seis años en Posible/Potencial", "proporción"),
+        ("cif_sal_6_posible_potencial", "CIF de salida a seis años en Posible/Potencial", "proporción"),
+        ("ols_coef_potencial", "coeficiente OLS de condición Potencial", "años por año"),
+    ):
+        if sensibilidad_publicable is not None:
+            calculation = f"Extremo entre los siete escenarios: {scenario_names}."
+            metadata[f"sens_min_{metric}"] = (
+                f"Mínimo de sensibilidad: {description}", unit, calculation
+            )
+            metadata[f"sens_max_{metric}"] = (
+                f"Máximo de sensibilidad: {description}", unit, calculation
+            )
+    missing_metadata = sorted(set(values) - set(metadata))
+    if missing_metadata:
+        raise ValueError("cifras sin metadatos: " + ", ".join(missing_metadata))
     claims = [
         {
             "id": claim_id,
-            "descripcion": metadata.get(claim_id, (claim_id.replace("_", " "), "valor", "Recálculo independiente."))[0],
+            "descripcion": metadata[claim_id][0],
             "valor": value,
-            "unidad": metadata.get(claim_id, ("", "valor", "Recálculo independiente."))[1],
-            "calculo": metadata.get(claim_id, ("", "", "Recálculo independiente."))[2],
+            "unidad": metadata[claim_id][1],
+            "calculo": metadata[claim_id][2],
         }
         for claim_id, value in values.items()
     ]

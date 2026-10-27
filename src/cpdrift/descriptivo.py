@@ -287,7 +287,7 @@ def build_ten_table(cif: pd.DataFrame) -> pd.DataFrame:
 
 def build_sensitivity_potential(table: pd.DataFrame) -> pd.DataFrame:
     """Pivot the expanded OLS potential term for the three regression scenarios."""
-    labels = {"principal": "Principal", "sin_par_2021_2023": "Sin el par 2021→2023", "sin_estatales": "Sin Codelco ni Enami"}
+    labels = {"principal": "Principal", "sin_2022": "Sin la edición 2022 (transcrita)", "sin_estatales": "Sin Codelco ni Enami"}
     term = 'C(condicion_prev, Treatment("BASE"))[T.POTENCIAL]'
     selected = table.loc[table["modelo"].eq("ols_ampliado") & table["metrica"].isin({f"coef:{term}", f"p:{term}"})].copy()
     selected["tipo"] = selected["metrica"].str.split(":", n=1).str[0]
@@ -310,8 +310,10 @@ def build_reconciliation_matrix(table: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("categoría sin etiqueta")
     result["simbolo"] = result["estado"].map(lambda value: "✓" if value == "ok" else "")
     output = result[["par", "orden_par", "categoria_etiqueta", "estado", "simbolo"]]
-    if len(output) != 30:
-        raise ValueError(f"matriz de conciliación requiere 30 filas, recibió {len(output)}")
+    if len(output) != len(table):
+        raise ValueError(
+            f"matriz de conciliación requiere {len(table)} filas, recibió {len(output)}"
+        )
     return output
 
 

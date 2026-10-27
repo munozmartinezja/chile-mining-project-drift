@@ -21,14 +21,16 @@ def row(edition: int, name: str, operator: str = "ACME", region: str = "Atacama"
 def run_match(tmp_path: Path, rows: list[dict[str, object]], manual: str | None = None) -> pd.DataFrame:
     tmp_path.mkdir(parents=True, exist_ok=True)
     manual_path = tmp_path / "manual.csv"
-    manual_path.write_text(
-        manual
-        or (
-            "edicion,proyecto_raw,decision,destino_edicion,"
-            "destino_proyecto_raw,nota\n"
-        ),
-        encoding="utf-8",
+    text = manual or (
+        "edicion,proyecto_raw,decision,destino_edicion,"
+        "destino_proyecto_raw,nota\n"
     )
+    source_lines = text.splitlines()
+    upgraded = [source_lines[0] + ",evidencia"]
+    for line in source_lines[1:]:
+        action = line.split(",")[2]
+        upgraded.append(line + (",nombre" if action == "mismo" else ",no_aplica"))
+    manual_path.write_text("\n".join(upgraded) + "\n", encoding="utf-8")
     matched, _, _ = assign_project_ids(
         pd.DataFrame(rows), manual_path, tmp_path / "revision.csv"
     )
@@ -140,7 +142,7 @@ def test_old_manual_schema_is_migrated_to_empty_new_header(tmp_path: Path) -> No
     )
 
     assert manual_path.read_text(encoding="utf-8") == (
-        "edicion,proyecto_raw,decision,destino_edicion,destino_proyecto_raw,nota\n"
+        "edicion,proyecto_raw,decision,destino_edicion,destino_proyecto_raw,nota,evidencia\n"
     )
 
 

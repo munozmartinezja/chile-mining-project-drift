@@ -26,6 +26,7 @@ from .descriptivo import (
 )
 from .export_powerbi import export_powerbi
 from .extract import apply_extraction_corrections, extract_all
+from .fuentes import verificar_fuentes
 from .indicators import build_indicator_tables, write_indicator_tables
 from .match import assign_project_ids
 from .normalize import apply_manual_regions, impute_regions, normalize_projects
@@ -38,6 +39,10 @@ from .regression import (
 )
 from .report import build_report, write_report
 from .sensibilidad import build_sensitivity, write_sensitivity
+from .sensibilidad_publicable import (
+    build_publishable_sensitivity,
+    write_publishable_sensitivity,
+)
 from .survival import build_cif_from_parquet, write_cif
 from .validacion import (
     build_successive_validation,
@@ -59,8 +64,10 @@ MANUAL_REGIONS_PATH = REFERENCE_DIR / "regiones_manual.csv"
 
 
 def main() -> None:
+    for warning in verificar_fuentes(RAW_DIR, REFERENCE_DIR / "fuentes_raw.csv"):
+        print(f"AVISO: {warning}")
     print("Extrayendo filas…")
-    extracted, _ = extract_all(RAW_DIR)
+    extracted, _ = extract_all(RAW_DIR, REFERENCE_DIR)
     extracted = apply_extraction_corrections(extracted, CORRECTIONS_PATH)
     print(f"  {len(extracted)} filas en {extracted['edicion'].nunique()} ediciones")
 
@@ -77,7 +84,7 @@ def main() -> None:
 
     print("Imputando regiones…")
     panel = impute_regions(identified)
-    panel = apply_manual_regions(panel, MANUAL_REGIONS_PATH)
+    panel = apply_manual_regions(panel, MANUAL_REGIONS_PATH, RAW_DIR)
 
     threshold_by_edition = {
         item["edicion"]: item["umbral_edicion"] for item in reconciliation
@@ -142,6 +149,19 @@ def main() -> None:
     )
     sensitivity = build_sensitivity(extended_data, sensitivity_projects, panel_df)
     write_sensitivity(sensitivity, INTERIM_DIR)
+    publishable_sensitivity = build_publishable_sensitivity(
+        panel_df,
+        projects_df,
+        indicators.transiciones,
+        normalized,
+        outcome_references.egresos,
+        CPI_PATH,
+        MANUAL_PATH,
+        INTERIM_DIR,
+    )
+    write_publishable_sensitivity(
+        publishable_sensitivity, INTERIM_DIR, Path("data/powerbi")
+    )
     date_rule = build_date_rule_check(panel_df, outcome_references.egresos)
     write_date_rule_check(date_rule, INTERIM_DIR)
     visual_tables = {
@@ -171,6 +191,7 @@ def main() -> None:
         descriptivas=descriptive,
         visuales=visual_tables,
         sensibilidad=sensitivity,
+        sensibilidad_publicable=publishable_sensitivity,
         regla_fecha=date_rule.detalle,
     )
     verified_claims = verify_claims_register(
@@ -182,6 +203,8 @@ def main() -> None:
         copper_workbook_path=COPPER_PRICE_PATH,
         cambios_path=REFERENCE_DIR / "cambios_cartera_declarados.csv",
         ajustes_path=REFERENCE_DIR / "ajustes_conciliacion.csv",
+        sensibilidad_path=INTERIM_DIR / "sensibilidad_publicable.parquet",
+        weak_panel_path=INTERIM_DIR / "panel_sin_vinculos_debiles.parquet",
     )
     write_claims_register(verified_claims, INTERIM_DIR / "claims.json")
     require_verified(verified_claims)

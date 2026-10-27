@@ -10,7 +10,9 @@ from typing import Any
 
 import pandas as pd
 
-from .pdftext import get_pdf_data
+from .declared import citation_in_pages
+from .ediciones import DATA_EDITIONS
+from .pdftext import get_pages_text, get_pdf_data
 
 CANONICAL_COLUMNS = [
     "edicion",
@@ -29,7 +31,11 @@ CANONICAL_COLUMNS = [
     "pagina_fuente",
 ]
 
-DATA_EDITIONS = [*range(2014, 2022), 2023, 2024, 2025]
+TRANSCRIPTION_2022_COLUMNS = [
+    "edicion", "puesta_en_marcha_raw", "proyecto", "operador", "sector",
+    "region", "tipo_proyecto", "condicion", "etapa", "estado_permisos",
+    "inversion_mmusd", "pagina",
+]
 CORRECTION_COLUMNS = [
     "edicion",
     "campo",
@@ -325,11 +331,71 @@ def extract_2025_workbook(path: Path) -> tuple[pd.DataFrame, dict[str, Any]]:
     }
 
 
-def extract_all(raw_dir: Path) -> tuple[pd.DataFrame, dict[str, Any]]:
+def extract_2022_transcription(path: Path) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Load the curated 2022 transcription through the legacy row parser."""
+    source = pd.read_csv(path, dtype=str, keep_default_na=False)
+    if source.columns.tolist() != TRANSCRIPTION_2022_COLUMNS:
+        raise ValueError(f"columnas inválidas en transcripción 2022: {path}")
+    if not source["edicion"].eq("2022").all():
+        raise ValueError("la transcripción 2022 contiene otra edición")
+    records = []
+    for row in source.itertuples(index=False):
+        legacy = [
+            row.puesta_en_marcha_raw, row.proyecto, row.operador, row.sector,
+            row.region, row.tipo_proyecto, row.condicion, row.etapa,
+            row.estado_permisos, row.inversion_mmusd,
+        ]
+        records.append(_record(2022, legacy, "Inversión (MMUS$)", int(row.pagina)))
+    return pd.DataFrame(records, columns=CANONICAL_COLUMNS), {
+        "pages": [10],
+        "method": "transcripcion",
+    }
+
+
+def verify_transcription_2022(
+    extracted: pd.DataFrame, subtotales_path: Path, raw_dir: Path
+) -> None:
+    """Reject an incomplete or source-inconsistent 2022 transcription."""
+    rows = extracted.loc[extracted["edicion"].eq(2022)]
+    if len(rows) != 53:
+        raise ValueError(f"transcripción 2022 requiere 53 filas, recibió {len(rows)}")
+    subtotals = pd.read_csv(subtotales_path, dtype=str, keep_default_na=False)
+    expected = ["dimension", "valor", "n_declarado", "capex_mmusd", "pagina", "frase"]
+    if subtotals.columns.tolist() != expected:
+        raise ValueError(f"columnas inválidas en subtotales 2022: {subtotales_path}")
+    pages = get_pages_text(raw_dir / "cartera_2022.pdf")
+    for subtotal in subtotals.itertuples(index=False):
+        if subtotal.dimension not in {"condicion", "sector"}:
+            raise ValueError(f"dimensión inválida en subtotal 2022: {subtotal.dimension}")
+        selected = rows.loc[rows[subtotal.dimension].eq(subtotal.valor)]
+        observed_count = len(selected)
+        observed_capex = float(selected["inversion_mmusd"].sum())
+        expected_count = int(subtotal.n_declarado)
+        expected_capex = parse_chilean_number(subtotal.capex_mmusd)
+        if observed_count != expected_count or observed_capex != expected_capex:
+            raise ValueError(
+                f"subtotal 2022 no cuadra para {subtotal.dimension}={subtotal.valor!r}: "
+                f"({observed_count}, {observed_capex}) != "
+                f"({expected_count}, {expected_capex})"
+            )
+        found, searched = citation_in_pages(pages, subtotal.frase, int(subtotal.pagina))
+        if not found:
+            raise ValueError(
+                f"cita de subtotal 2022 no encontrada en páginas {searched}: "
+                f"{subtotal.dimension}={subtotal.valor!r}"
+            )
+
+
+def extract_all(raw_dir: Path, reference_dir: Path) -> tuple[pd.DataFrame, dict[str, Any]]:
     frames: list[pd.DataFrame] = []
     provenance: dict[str, Any] = {}
     for edition in DATA_EDITIONS[:-1]:
-        frame, detail = extract_pdf_edition(raw_dir / f"cartera_{edition}.pdf", edition)
+        if edition == 2022:
+            frame, detail = extract_2022_transcription(
+                reference_dir / "cartera_2022_transcrita.csv"
+            )
+        else:
+            frame, detail = extract_pdf_edition(raw_dir / f"cartera_{edition}.pdf", edition)
         frames.append(frame)
         provenance[str(edition)] = detail
     frame, detail = extract_2025_workbook(raw_dir / "anexo_c_2025.xlsx")
@@ -339,6 +405,7 @@ def extract_all(raw_dir: Path) -> tuple[pd.DataFrame, dict[str, Any]]:
     result["edicion"] = result["edicion"].astype("int64")
     result["puesta_en_marcha"] = pd.array(result["puesta_en_marcha"], dtype="Int64")
     result["inversion_mmusd"] = pd.to_numeric(result["inversion_mmusd"], errors="coerce")
+    verify_transcription_2022(result, reference_dir / "subtotales_2022.csv", raw_dir)
     return result, provenance
 
 

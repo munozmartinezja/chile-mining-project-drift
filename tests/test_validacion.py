@@ -70,7 +70,7 @@ def test_temporal_validation_metrics_and_partition() -> None:
 
 def test_successive_cuts_use_only_prior_rows(monkeypatch) -> None:
     editions = [2017, 2017, 2018, 2018, 2019, 2019, 2020, 2020,
-                2021, 2021, 2023, 2023, 2024, 2024]
+                2021, 2021, 2022, 2022, 2023, 2023, 2024, 2024]
     data = pd.DataFrame(
         {
             "project_id": range(len(editions)),
@@ -87,7 +87,7 @@ def test_successive_cuts_use_only_prior_rows(monkeypatch) -> None:
 
     monkeypatch.setattr("cpdrift.validacion._firth_predictions", fake_predictions)
     result = build_successive_validation(data, bootstrap_replicates=10)
-    assert set(result.cortes["corte"]) == {2018, 2019, 2020, 2021, 2023, 2024}
+    assert set(result.cortes["corte"]) == {2018, 2019, 2020, 2021, 2022, 2023, 2024}
     assert all(train_max < test_min for train_max, test_min in seen)
     assert pd.isna(
         result.agregada.set_index("modelo").loc["prevalencia", "auc"]

@@ -47,7 +47,7 @@ def test_all_outcomes_and_2022_is_not_a_gap() -> None:
     assert projects.loc["P001", "desenlace"] == "vigente"
     assert projects.loc["P002", "desenlace"] == "entro_en_operacion"
     assert projects.loc["P003", "desenlace"] == "salio_sin_operar"
-    assert not bool(projects.loc["P004", "reingreso"])
+    assert bool(projects.loc["P004", "reingreso"])
     assert projects.loc["P004", "desenlace"] == "censurado"
     assert bool(projects.loc["P005", "reingreso"])
     assert projects.loc["P002", "motivo_salida"] == "operacion"

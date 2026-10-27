@@ -34,12 +34,13 @@ COUNT_IDS = {
     "min_proyectos_edicion",
     "max_proyectos_edicion",
     "n_escenarios_regresion",
-    "n_escenarios_potencial_robusto",
+    "n_escenarios_potencial_positivo_p05",
     "n_proyectos_anio4",
     "n_cifras_verificadas",
 }
 
-DATA_EDITIONS = [*range(2014, 2022), 2023, 2024, 2025]
+DATA_EDITIONS = list(range(2014, 2026))
+VALIDATION_CUTS = (2018, 2019, 2020, 2021, 2022, 2023, 2024)
 AGGREGATE_PREFIX = "OTROS"
 AGGREGATE_CONTAINS = "PROYECTOS DE INFORMACION"
 AGGREGATE_EXACT_NAMES = frozenset({"PROYECTOS FURE", "TRANQUES"})
@@ -384,6 +385,7 @@ def _recalculate_reconciliation_counts(
     cambios = pd.read_csv(cambios_path)
     ajustes = pd.read_csv(ajustes_path)
     editions = sorted(int(value) for value in panel["edicion"].unique())
+    panel = panel.loc[~panel["nombre_norm"].map(_aggregate_name)].copy()
     exact = 0
     adjusted = 0
     for edition_from, edition_to in itertools.pairwise(editions):
@@ -556,6 +558,7 @@ def _recalculate(
                 {
                     "project_id": project_id,
                     "ed_prev": int(previous["edicion"]),
+                    "ed_next": int(following["edicion"]),
                     "pem_prev": previous["puesta_en_marcha"],
                     "delta_pem": transition_delta,
                     "tasa_deriva": transition_rate,
@@ -901,7 +904,7 @@ def _recalculate(
         )
         cut_rows: list[dict[str, object]] = []
         cut_aucs: list[float] = []
-        for cut in (2018, 2019, 2020, 2021, 2023, 2024):
+        for cut in VALIDATION_CUTS:
             cut_train = data.loc[data["ed_prev"].lt(cut)]
             cut_test = data.loc[data["ed_prev"].eq(cut)]
             if cut_train.empty or cut_test.empty:
@@ -995,13 +998,16 @@ def _recalculate(
                 ),
                 "auc_corte_min": min(cut_aucs),
                 "auc_corte_max": max(cut_aucs),
-                "n_cortes": 6,
+                "n_cortes": len(VALIDATION_CUTS),
                 "n_test_agregado": len(combined),
             }
         )
         scenario_specs = {
             "principal": (data, formula),
-            "sin_par_2021_2023": (data.loc[~data["ed_prev"].eq(2021)], formula),
+            "sin_2022": (
+                data.loc[~(data["ed_prev"].eq(2022) | data["ed_next"].eq(2022))],
+                formula,
+            ),
             "sin_estatales": (
                 data.loc[data["estatal"].eq(0)],
                 formula.replace(" + estatal", ""),
@@ -1014,7 +1020,7 @@ def _recalculate(
                 scenario_coef[potential] > 0 and scenario_p[potential] < 0.05
             )
         result["n_escenarios_regresion"] = len(scenario_specs)
-        result["n_escenarios_potencial_robusto"] = robust
+        result["n_escenarios_potencial_positivo_p05"] = robust
         if egresos_path is not None:
             comparable = egresos.loc[
                 egresos["motivo"].isin({"operacion", "reestructuracion"})
@@ -1047,6 +1053,165 @@ def _matches(claim_id: str, stated: object, recalculated: object) -> bool:
     return abs(float(stated) - float(recalculated)) <= 1e-9
 
 
+def _verify_sensitivity_scenario(
+    panel: pd.DataFrame,
+    egresos: pd.DataFrame,
+    cpi_path: Path,
+    scenario: str,
+) -> dict[str, float]:
+    """Independently rebuild one publication sensitivity scenario."""
+    source = panel.loc[~panel["nombre_norm"].map(_aggregate_name)].copy()
+    cpi_source = pd.read_csv(cpi_path)
+    cpi = {
+        int(row.anio): (float(row.s1) + float(row.s2)) / 2
+        for row in cpi_source.itertuples(index=False)
+    }
+    source["capex_real_2025"] = [
+        float(value) * cpi[2025] / cpi[int(edition)]
+        if pd.notna(value) else np.nan
+        for value, edition in zip(
+            source["inversion_mmusd"], source["edicion"], strict=True
+        )
+    ]
+    histories = []
+    for project_id, appearances in source.groupby("project_id", sort=False):
+        ordered = appearances.sort_values("edicion", kind="stable")
+        first = ordered.iloc[0]
+        last = ordered.iloc[-1]
+        if scenario == "capex_inicial_ge_90" and (
+            pd.isna(first["inversion_mmusd"])
+            or float(first["inversion_mmusd"]) < 90
+        ):
+            continue
+        if int(last["edicion"]) == 2025:
+            outcome = "vigente"
+            source_kind = "vigente"
+        else:
+            matches = egresos.loc[
+                egresos["edicion_desde"].eq(int(last["edicion"]))
+                & egresos["proyecto_raw"].eq(last["proyecto_raw"])
+            ]
+            if len(matches) == 1:
+                exit_row = matches.iloc[0]
+                source_kind = str(exit_row["fuente"])
+                outcome = {
+                    "operacion": "entro_en_operacion",
+                    "reestructuracion": "salio_sin_operar",
+                    "metodologia": "censurado",
+                    "fusion": "censurado",
+                    "no_declarado": "censurado",
+                }[str(exit_row["motivo"])]
+            elif scenario == "sin_vinculos_debiles":
+                outcome = "censurado"
+                source_kind = "sensibilidad"
+            else:
+                raise ValueError(
+                    f"egreso no único al verificar sensibilidad: {last['proyecto_raw']}"
+                )
+        if scenario == "censurados_como_salida" and outcome == "censurado":
+            outcome = "salio_sin_operar"
+        if scenario == "censurados_como_operacion" and outcome == "censurado":
+            outcome = "entro_en_operacion"
+        if scenario == "cuadre_como_operacion" and source_kind == "cuadro":
+            outcome = "entro_en_operacion"
+        if scenario == "cuadre_como_salida" and source_kind == "cuadro":
+            outcome = "salio_sin_operar"
+        histories.append((project_id, ordered, outcome))
+
+    next_edition = {
+        edition: DATA_EDITIONS[index + 1]
+        for index, edition in enumerate(DATA_EDITIONS[:-1])
+    }
+    endpoints: list[dict[str, object]] = []
+    transitions: list[dict[str, object]] = []
+    for project_id, ordered, outcome in histories:
+        first = ordered.iloc[0]
+        last = ordered.iloc[-1]
+        first_edition = int(first["edicion"])
+        last_edition = int(last["edicion"])
+        if outcome in {"vigente", "censurado"}:
+            duration = (2025 if outcome == "vigente" else last_edition) - first_edition
+            event = 0
+        else:
+            duration = next_edition[last_edition] - first_edition
+            event = 1 if outcome == "entro_en_operacion" else 2
+        condition = first["condicion"]
+        group = (
+            "BASE_PROBABLE" if condition in {"BASE", "PROBABLE"}
+            else "POSIBLE_POTENCIAL" if condition in {"POSIBLE", "POTENCIAL"}
+            else None
+        )
+        if duration and first_edition >= 2015:
+            endpoints.append({"t": duration, "evento": event, "grupo": group})
+        appearances = list(ordered.to_dict("records"))
+        for previous, following in itertools.pairwise(appearances):
+            delta = (
+                None
+                if pd.isna(previous["puesta_en_marcha"])
+                or pd.isna(following["puesta_en_marcha"])
+                else float(following["puesta_en_marcha"])
+                - float(previous["puesta_en_marcha"])
+            )
+            gap = int(following["edicion"]) - int(previous["edicion"])
+            transitions.append(
+                {
+                    "project_id": project_id,
+                    "ed_prev": int(previous["edicion"]),
+                    "pem_prev": previous["puesta_en_marcha"],
+                    "delta_pem": delta,
+                    "tasa_deriva": None if delta is None else delta / gap,
+                    "capex_prev_real": previous["capex_real_2025"],
+                    "condicion_prev": previous["condicion"],
+                    "sector": previous["sector"],
+                }
+            )
+    values: dict[str, float] = {}
+    for group, suffix in (
+        ("BASE_PROBABLE", "base_probable"),
+        ("POSIBLE_POTENCIAL", "posible_potencial"),
+    ):
+        operation, exits = _cif_at_six(
+            [row for row in endpoints if row["grupo"] == group]
+        )
+        values[f"cif_op_6_{suffix}"] = float(operation)
+        values[f"cif_sal_6_{suffix}"] = float(exits)
+    values["ols_coef_potencial"] = float(
+        recalculate_ols(pd.DataFrame(transitions))["ols_coef_potencial"]
+    )
+    return values
+
+
+def _verify_sensitivity_extremes(
+    panel: pd.DataFrame,
+    weak_panel: pd.DataFrame,
+    egresos: pd.DataFrame,
+    cpi_path: Path,
+) -> dict[str, float]:
+    metrics = [
+        _verify_sensitivity_scenario(
+            weak_panel if scenario == "sin_vinculos_debiles" else panel,
+            egresos,
+            cpi_path,
+            scenario,
+        )
+        for scenario in (
+            "principal",
+            "censurados_como_salida",
+            "censurados_como_operacion",
+            "cuadre_como_operacion",
+            "cuadre_como_salida",
+            "sin_vinculos_debiles",
+            "capex_inicial_ge_90",
+        )
+    ]
+    result = {}
+    for metric in metrics[0]:
+        values = [row[metric] for row in metrics]
+        result[f"sens_min_{metric}"] = min(values)
+        result[f"sens_max_{metric}"] = max(values)
+    return result
+
+
 def verify_claims_register(
     claims: list[dict[str, object]],
     panel_path: Path,
@@ -1056,6 +1221,8 @@ def verify_claims_register(
     copper_workbook_path: Path | None = None,
     cambios_path: Path | None = None,
     ajustes_path: Path | None = None,
+    sensibilidad_path: Path | None = None,
+    weak_panel_path: Path | None = None,
 ) -> list[dict[str, object]]:
     """Recalculate and label every claim without reading derived indicators."""
     expected = _recalculate(
@@ -1067,6 +1234,19 @@ def verify_claims_register(
         cambios_path,
         ajustes_path,
     )
+    if sensibilidad_path is not None:
+        if weak_panel_path is None or egresos_path is None:
+            raise ValueError("faltan entradas para verificar sensibilidades")
+        if not sensibilidad_path.exists():
+            raise ValueError("falta sensibilidad_publicable.parquet")
+        expected.update(
+            _verify_sensitivity_extremes(
+                pd.read_parquet(panel_path),
+                pd.read_parquet(weak_panel_path),
+                pd.read_csv(egresos_path),
+                cpi_path,
+            )
+        )
     verified: list[dict[str, object]] = []
     count_claim: dict[str, object] | None = None
     for claim in claims:
