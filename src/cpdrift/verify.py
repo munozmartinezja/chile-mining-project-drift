@@ -30,6 +30,10 @@ COUNT_IDS = {
     "n_test_corte_unico",
     "n_cortes",
     "n_test_agregado",
+    "n_filas_transcritas_2022",
+    "n_vinculos_debiles",
+    "n_egresos_declarados",
+    "n_egresos_por_cuadro",
     "n_ediciones",
     "min_proyectos_edicion",
     "max_proyectos_edicion",
@@ -486,6 +490,8 @@ def _recalculate(
     copper_workbook_path: Path | None = None,
     cambios_path: Path | None = None,
     ajustes_path: Path | None = None,
+    transcripcion_2022_path: Path | None = None,
+    cruce_manual_path: Path | None = None,
 ) -> dict[str, float | int | None]:
     panel = pd.read_parquet(panel_path)
     projects = pd.read_parquet(projects_path)
@@ -735,6 +741,21 @@ def _recalculate(
         },
         **ols_values,
     }
+    if transcripcion_2022_path is not None:
+        result["n_filas_transcritas_2022"] = len(
+            pd.read_csv(transcripcion_2022_path)
+        )
+    if cruce_manual_path is not None:
+        manual = pd.read_csv(cruce_manual_path)
+        result["n_vinculos_debiles"] = int(
+            (
+                manual["decision"].eq("mismo")
+                & manual["evidencia"].isin({"operador_capex", "conciliacion"})
+            ).sum()
+        )
+    if egresos_path is not None:
+        result["n_egresos_declarados"] = len(egresos)
+        result["n_egresos_por_cuadro"] = int(egresos["fuente"].eq("cuadro").sum())
     valid_deltas = [value for value in deltas if value is not None]
     for condition in ("BASE", "PROBABLE", "POSIBLE", "POTENCIAL"):
         condition_deltas = [
@@ -930,10 +951,12 @@ def _recalculate(
             cut_auc = _verify_auc(cut_observed, probabilities["completo"])
             cut_aucs.append(cut_auc)
             prevalence_probability = float(cut_train["atraso"].mean())
+            training_ids = set(cut_train["project_id"])
             for position, (_, source_row) in enumerate(cut_test.iterrows()):
                 cut_rows.append(
                     {
                         "project_id": source_row["project_id"],
+                        "proyecto_visto": source_row["project_id"] in training_ids,
                         "atraso": float(source_row["atraso"]),
                         "p_completo": float(probabilities["completo"][position]),
                         "p_solo_condicion": float(
@@ -1000,6 +1023,9 @@ def _recalculate(
                 "auc_corte_max": max(cut_aucs),
                 "n_cortes": len(VALIDATION_CUTS),
                 "n_test_agregado": len(combined),
+                "pct_test_proyectos_vistos": float(
+                    combined["proyecto_visto"].mean() * 100
+                ),
             }
         )
         scenario_specs = {
@@ -1223,6 +1249,8 @@ def verify_claims_register(
     ajustes_path: Path | None = None,
     sensibilidad_path: Path | None = None,
     weak_panel_path: Path | None = None,
+    transcripcion_2022_path: Path | None = None,
+    cruce_manual_path: Path | None = None,
 ) -> list[dict[str, object]]:
     """Recalculate and label every claim without reading derived indicators."""
     expected = _recalculate(
@@ -1233,6 +1261,8 @@ def verify_claims_register(
         copper_workbook_path,
         cambios_path,
         ajustes_path,
+        transcripcion_2022_path,
+        cruce_manual_path,
     )
     if sensibilidad_path is not None:
         if weak_panel_path is None or egresos_path is None:

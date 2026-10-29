@@ -25,7 +25,10 @@ def test_report_has_required_header_and_sections(tmp_path: Path) -> None:
         indicators=indicators,
         models={"cif": [], "ols": [], "logit": []},
     )
-    assert report["encabezado"] == "EXPLORATORIO — no publicable"
+    assert report["encabezado"] == (
+        "Informe de diagnóstico del pipeline. Las cifras publicables están en "
+        "docs/registro_cifras.csv."
+    )
     assert set(report) >= {
         "ediciones",
         "identidad",

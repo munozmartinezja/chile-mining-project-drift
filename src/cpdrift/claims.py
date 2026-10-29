@@ -72,6 +72,10 @@ def build_claims_register(
     sensibilidad: pd.DataFrame | None = None,
     sensibilidad_publicable: pd.DataFrame | None = None,
     regla_fecha: pd.DataFrame | None = None,
+    transcripcion_2022: pd.DataFrame | None = None,
+    cruce_manual: pd.DataFrame | None = None,
+    validacion_datos: pd.DataFrame | None = None,
+    validacion_predicciones: pd.DataFrame | None = None,
 ) -> list[dict[str, object]]:
     """Build the auditable list of required headline figures."""
     transitions = tables.transiciones
@@ -144,6 +148,37 @@ def build_claims_register(
                     (~exact_reconciliations).sum()
                 ),
             }
+        )
+    if transcripcion_2022 is not None:
+        values["n_filas_transcritas_2022"] = len(transcripcion_2022)
+    if cruce_manual is not None:
+        values["n_vinculos_debiles"] = int(
+            (
+                cruce_manual["decision"].eq("mismo")
+                & cruce_manual["evidencia"].isin({"operador_capex", "conciliacion"})
+            ).sum()
+        )
+    if egresos is not None:
+        values.update(
+            {
+                "n_egresos_declarados": len(egresos),
+                "n_egresos_por_cuadro": int(egresos["fuente"].eq("cuadro").sum()),
+            }
+        )
+    if validacion_datos is not None and validacion_predicciones is not None:
+        seen = sum(
+            row.project_id
+            in set(
+                validacion_datos.loc[
+                    validacion_datos["ed_prev"].lt(row.corte), "project_id"
+                ]
+            )
+            for row in validacion_predicciones.itertuples(index=False)
+        )
+        values["pct_test_proyectos_vistos"] = (
+            None
+            if validacion_predicciones.empty
+            else float(seen / len(validacion_predicciones) * 100)
         )
     if cif is not None and ols is not None:
         incident_total = cif.loc[
@@ -590,6 +625,31 @@ def build_claims_register(
         "auc_corte_max": ("AUC máximo entre cortes temporales", "AUC", "Máximo del AUC del modelo completo entre cortes."),
         "n_cortes": ("Cortes de validación temporal", "cortes", "Conteo de cortes sucesivos evaluados."),
         "n_test_agregado": ("Observaciones agregadas de prueba", "transiciones", "Conteo de predicciones fuera de muestra agregadas."),
+        "n_filas_transcritas_2022": (
+            "Filas transcritas de la cartera 2022",
+            "filas",
+            "Conteo de filas en cartera_2022_transcrita.csv.",
+        ),
+        "n_vinculos_debiles": (
+            "Vínculos manuales con evidencia débil",
+            "vínculos",
+            "Decisiones mismo sustentadas por operador y capex o conciliación.",
+        ),
+        "n_egresos_declarados": (
+            "Egresos declarados",
+            "egresos",
+            "Conteo de filas en egresos_declarados.csv.",
+        ),
+        "n_egresos_por_cuadro": (
+            "Egresos identificados por cuadro",
+            "egresos",
+            "Conteo de egresos cuya fuente es cuadro.",
+        ),
+        "pct_test_proyectos_vistos": (
+            "Transiciones de prueba de proyectos vistos en entrenamiento",
+            "porcentaje",
+            "Porcentaje agregado sobre los siete cortes de origen móvil.",
+        ),
         "mediana_deriva_anio4": ("Deriva mediana al cuarto año", "años", "Mediana entre proyectos observados al cuarto año."),
         "p90_deriva_anio4": ("Percentil 90 de deriva al cuarto año", "años", "Percentil 90 entre proyectos observados al cuarto año."),
         "n_proyectos_anio4": ("Proyectos observados al cuarto año", "proyectos", "Conteo que sustenta el abanico al cuarto año."),
