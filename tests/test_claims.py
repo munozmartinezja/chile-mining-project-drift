@@ -107,6 +107,71 @@ def test_claims_and_independent_verification_agree(tmp_path: Path) -> None:
     require_verified(verified)
 
 
+def test_reference_and_seen_project_claims_are_registered() -> None:
+    tables = SimpleNamespace(
+        transiciones=pd.DataFrame(
+            columns=[
+                "capex_prev_nom",
+                "capex_next_nom",
+                "delta_pem",
+                "tasa_deriva",
+                "delta_capex_nom_pct",
+                "delta_capex_real_pct",
+            ]
+        ),
+        fiabilidad=pd.Series(
+            {
+                "pct_a_tiempo": None,
+                "pct_hasta_1_anio": None,
+                "mediana_deriva_acumulada": None,
+            }
+        ),
+        entradas_salidas=pd.DataFrame(
+            {"salidas_sin_operar": [0], "salidas_operacion": [0]}
+        ),
+        proyectos_deriva=pd.DataFrame(),
+        n_filas_agregadas_excluidas=0,
+    )
+    transcripcion = pd.DataFrame({"proyecto": ["A", "B", "C"]})
+    manual = pd.DataFrame(
+        {
+            "decision": ["mismo", "mismo", "mismo", "nuevo"],
+            "evidencia": [
+                "operador_capex",
+                "conciliacion",
+                "nombre_comun",
+                "conciliacion",
+            ],
+        }
+    )
+    egresos = pd.DataFrame({"fuente": ["cuadro", "nombre", "cuadro"]})
+    validation_data = pd.DataFrame(
+        {
+            "project_id": ["A", "B", "A", "C"],
+            "ed_prev": [2017, 2017, 2018, 2018],
+        }
+    )
+    predictions = pd.DataFrame(
+        {"project_id": ["A", "C"], "corte": [2018, 2018]}
+    )
+
+    claims = build_claims_register(
+        tables,
+        egresos=egresos,
+        transcripcion_2022=transcripcion,
+        cruce_manual=manual,
+        validacion_datos=validation_data,
+        validacion_predicciones=predictions,
+    )
+    values = {item["id"]: item["valor"] for item in claims}
+
+    assert values["n_filas_transcritas_2022"] == 3
+    assert values["n_vinculos_debiles"] == 2
+    assert values["n_egresos_declarados"] == 3
+    assert values["n_egresos_por_cuadro"] == 2
+    assert values["pct_test_proyectos_vistos"] == 50
+
+
 def test_outcome_claims_are_recalculated_from_panel_and_references(
     tmp_path: Path,
 ) -> None:
@@ -216,6 +281,8 @@ def test_outcome_claims_are_recalculated_from_panel_and_references(
     egresos_path = tmp_path / "egresos.csv"
     cambios_path = tmp_path / "cambios.csv"
     ajustes_path = tmp_path / "ajustes.csv"
+    transcripcion_path = tmp_path / "cartera_2022_transcrita.csv"
+    manual_path = tmp_path / "cruce_manual.csv"
     panel.to_parquet(panel_path, index=False)
     projects.to_parquet(projects_path, index=False)
     egresos.to_csv(egresos_path, index=False)
@@ -245,6 +312,12 @@ def test_outcome_claims_are_recalculated_from_panel_and_references(
             "delta_capex",
         ],
     ).to_csv(ajustes_path, index=False)
+    transcripcion = pd.DataFrame({"proyecto": ["A", "B"]})
+    manual = pd.DataFrame(
+        {"decision": ["mismo", "mismo"], "evidencia": ["conciliacion", "nombre_comun"]}
+    )
+    transcripcion.to_csv(transcripcion_path, index=False)
+    manual.to_csv(manual_path, index=False)
 
     indicators = build_indicator_tables(panel, projects, cpi_path, egresos)
     claims = build_claims_register(
@@ -252,6 +325,8 @@ def test_outcome_claims_are_recalculated_from_panel_and_references(
         projects=projects,
         egresos=egresos,
         conciliacion=reconciliation,
+        transcripcion_2022=transcripcion,
+        cruce_manual=manual,
     )
     verified = verify_claims_register(
         claims,
@@ -261,6 +336,8 @@ def test_outcome_claims_are_recalculated_from_panel_and_references(
         egresos_path,
         cambios_path=cambios_path,
         ajustes_path=ajustes_path,
+        transcripcion_2022_path=transcripcion_path,
+        cruce_manual_path=manual_path,
     )
     values = {item["id"]: item["valor"] for item in verified}
 
@@ -274,6 +351,10 @@ def test_outcome_claims_are_recalculated_from_panel_and_references(
     assert values["n_conciliaciones_con_ajuste"] == 1
     assert values["n_salidas_umbral90_operacion"] == 1
     assert values["n_salidas_umbral90_sin_operar"] == 1
+    assert values["n_filas_transcritas_2022"] == 2
+    assert values["n_vinculos_debiles"] == 1
+    assert values["n_egresos_declarados"] == 3
+    assert values["n_egresos_por_cuadro"] == 1
 
     changed = [dict(item) for item in claims]
     changed[0]["valor"] += 1
@@ -285,6 +366,8 @@ def test_outcome_claims_are_recalculated_from_panel_and_references(
         egresos_path,
         cambios_path=cambios_path,
         ajustes_path=ajustes_path,
+        transcripcion_2022_path=transcripcion_path,
+        cruce_manual_path=manual_path,
     )
     assert failed[0]["estado"] == "fallida"
     with pytest.raises(ValueError, match="cifras no verificadas"):

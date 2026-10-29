@@ -1,0 +1,112 @@
+id,descripcion,valor,unidad
+n_proyectos,Proyectos no agregados,133.0,proyectos
+n_filas_agregadas_excluidas,Filas agregadas excluidas,27.0,proyectos
+n_transiciones,Transiciones entre apariciones,409.0,transiciones
+media_delta_pem,Atraso medio entre apariciones,0.8973105134474327,años
+mediana_delta_pem,Atraso mediano entre apariciones,1.0,años
+pct_transiciones_atraso,Transiciones con atraso,50.12224938875306,porcentaje
+pct_transiciones_adelanto,Transiciones con adelanto,3.9119804400977993,porcentaje
+media_tasa_deriva,Tasa media de deriva,0.8261095058161073,años por año
+pct_capex_sin_actualizar,Transiciones sin actualización nominal de capex,69.19315403422983,porcentaje
+mediana_delta_capex_nom_pct_actualizados,Variación mediana del capex nominal actualizado,8.758706983653287,porcentaje
+mediana_delta_capex_real_pct_actualizados,Variación mediana del capex real actualizado,5.5418200253477545,porcentaje
+pct_fiabilidad_a_tiempo,Fiabilidad del año a tiempo,45.94594594594595,porcentaje
+pct_fiabilidad_1_anio,Fiabilidad dentro de un año,67.56756756756756,porcentaje
+mediana_deriva_acumulada_operados,Deriva mediana de proyectos operados,1.0,años
+n_salidas_umbral90_sin_operar,Salidas sin operar sobre umbral homogéneo,32.0,proyectos
+n_salidas_umbral90_operacion,Salidas a operación sobre umbral homogéneo,43.0,proyectos
+n_desenlace_operacion,Proyectos que entraron en operación,45.0,proyectos
+n_desenlace_sin_operar,Proyectos que salieron sin operar,27.0,proyectos
+n_desenlace_censurado,Proyectos con salida censurada,4.0,proyectos
+pct_salidas_confirmadas_por_nombre,Salidas confirmadas por nombre,75.30864197530865,porcentaje
+n_pares_conciliados,Pares de ediciones conciliados,11.0,pares de ediciones
+n_conciliaciones_exactas,Combinaciones conciliadas sin ajuste,28.0,combinaciones
+n_conciliaciones_con_ajuste,Combinaciones conciliadas con ajuste documentado,5.0,combinaciones
+n_filas_transcritas_2022,Filas transcritas de la cartera 2022,53.0,filas
+n_vinculos_debiles,Vínculos manuales con evidencia débil,22.0,vínculos
+n_egresos_declarados,Egresos declarados,81.0,egresos
+n_egresos_por_cuadro,Egresos identificados por cuadro,18.0,egresos
+pct_test_proyectos_vistos,Transiciones de prueba de proyectos vistos en entrenamiento,85.81818181818181,porcentaje
+n_cohorte_incidente,Proyectos de la cohorte incidente,64.0,proyectos
+cif_op_6_base_probable,CIF de operación a seis años en BASE_PROBABLE,0.7332277097902098,proporción
+cif_sal_6_base_probable,CIF de salida a seis años en BASE_PROBABLE,0.1015625,proporción
+cif_op_6_posible_potencial,CIF de operación a seis años en POSIBLE_POTENCIAL,0.23277698863636365,proporción
+cif_sal_6_posible_potencial,CIF de salida a seis años en POSIBLE_POTENCIAL,0.34215198863636365,proporción
+ols_coef_potencial,Coeficiente OLS para condición POTENCIAL,1.1597608120586478,años por año
+ols_coef_log_capex,Coeficiente OLS para log_capex,0.2716830695347715,años por año
+ols_coef_horizonte,Coeficiente OLS para horizonte,-0.2693200017436192,años por año
+ols_n,Observaciones del modelo OLS,409.0,transiciones
+cif_op_4_base_probable,"CIF operación a cuatro años, BASE_PROBABLE",0.3936298076923077,proporción
+cif_sal_4_base_probable,"CIF salida a cuatro años, BASE_PROBABLE",0.1015625,proporción
+cif_op_4_posible_potencial,"CIF operación a cuatro años, POSIBLE_POTENCIAL",0.0556640625,proporción
+cif_sal_4_posible_potencial,"CIF salida a cuatro años, POSIBLE_POTENCIAL",0.109375,proporción
+ols_amp_coef_potencial,Coeficiente potencial OLS ampliado,1.2544698390089253,años por año
+ols_amp_coef_precio_cu,Coeficiente precio cobre OLS ampliado,1.1272932909525957,años por año
+ols_amp_p_precio_cu,p precio cobre OLS ampliado,0.0004416795448703169,probabilidad
+ols_amp_coef_estatal,Coeficiente estatal OLS ampliado,0.322263377901454,años por año
+ols_amp_p_estatal,p estatal OLS ampliado,0.246811232482555,probabilidad
+auc_corte_unico_completo,"AUC temporal modelo completo, corte único",0.7363299351251158,AUC
+auc_corte_unico_solo_condicion,"AUC temporal solo condición, corte único",0.5655442281948306,AUC
+brier_corte_unico_completo,"Brier temporal modelo completo, corte único",0.22640623603077187,puntaje de Brier
+brier_corte_unico_prevalencia,"Brier temporal prevalencia, corte único",0.2712455071999267,puntaje de Brier
+calibracion_corte_unico_completo,"Calibración modelo completo, corte único",0.147209568867618,proporción
+n_train_corte_unico,Entrenamiento del corte único,209.0,transiciones
+n_test_corte_unico,Prueba del corte único,200.0,transiciones
+auc_agregado_completo,AUC agregado del modelo completo,0.6608863708567193,AUC
+auc_agregado_completo_ic_inf,Límite inferior del AUC agregado,0.5856424935993468,AUC
+auc_agregado_completo_ic_sup,Límite superior del AUC agregado,0.7307970539278927,AUC
+auc_agregado_solo_condicion,AUC agregado usando solo condición,0.5013766811394684,AUC
+brier_agregado_completo,Brier agregado del modelo completo,0.23731080234359203,puntaje de Brier
+brier_agregado_prevalencia,Brier agregado del modelo de prevalencia,0.25769563482954544,puntaje de Brier
+mejora_brier_agregada,Mejora agregada del puntaje de Brier,0.020384832485953408,puntaje de Brier
+mejora_brier_agregada_ic_inf,Límite inferior de la mejora de Brier,-0.003404472286215819,puntaje de Brier
+mejora_brier_agregada_ic_sup,Límite superior de la mejora de Brier,0.043262595637425266,puntaje de Brier
+calibracion_agregada_completo,Calibración agregada del modelo completo,0.05519142568803814,proporción
+auc_corte_min,AUC mínimo entre cortes temporales,0.49666666666666665,AUC
+auc_corte_max,AUC máximo entre cortes temporales,0.8171875,AUC
+n_cortes,Cortes de validación temporal,7.0,cortes
+n_test_agregado,Observaciones agregadas de prueba,275.0,transiciones
+pct_atraso_base,Transiciones Base con atraso,38.94736842105263,porcentaje
+pct_atraso_probable,Transiciones Probable con atraso,49.18032786885246,porcentaje
+pct_atraso_posible,Transiciones Posible con atraso,54.166666666666664,porcentaje
+pct_atraso_potencial,Transiciones Potencial con atraso,59.72222222222222,porcentaje
+pct_transiciones_sin_cambio,Transiciones sin cambio de fecha,45.965770171149146,porcentaje
+mediana_capex_inicial_real,Capex inicial real mediano,683.5948202027703,MMUS$ de 2025
+pct_proyectos_cobre,Proyectos del sector cobre,63.1578947368421,porcentaje
+pct_proyectos_antofagasta,Proyectos ubicados en Antofagasta,44.3609022556391,porcentaje
+n_ediciones,Ediciones de cartera analizadas,12.0,ediciones
+min_proyectos_edicion,Mínimo de proyectos por edición,35.0,proyectos
+max_proyectos_edicion,Máximo de proyectos por edición,57.0,proyectos
+n_escenarios_regresion,Escenarios de regresión,3.0,escenarios
+n_escenarios_potencial_positivo_p05,"Escenarios de regresión con coeficiente Potencial positivo y p < 0,05",3.0,escenarios
+sens_min_cif_op_6_base_probable,Mínimo de sensibilidad: CIF de operación a seis años en Base/Probable,0.5222902097902098,proporción
+sens_max_cif_op_6_base_probable,Máximo de sensibilidad: CIF de operación a seis años en Base/Probable,0.7413117185844459,proporción
+sens_min_cif_sal_6_base_probable,Mínimo de sensibilidad: CIF de salida a seis años en Base/Probable,0.09753694581280789,proporción
+sens_max_cif_sal_6_base_probable,Máximo de sensibilidad: CIF de salida a seis años en Base/Probable,0.3125,proporción
+sens_min_cif_op_6_posible_potencial,Mínimo de sensibilidad: CIF de operación a seis años en Posible/Potencial,0.20912585075352455,proporción
+sens_max_cif_op_6_posible_potencial,Máximo de sensibilidad: CIF de operación a seis años en Posible/Potencial,0.30805633203694704,proporción
+sens_min_cif_sal_6_posible_potencial,Mínimo de sensibilidad: CIF de salida a seis años en Posible/Potencial,0.3100616796305299,proporción
+sens_max_cif_sal_6_posible_potencial,Máximo de sensibilidad: CIF de salida a seis años en Posible/Potencial,0.40899216091395235,proporción
+sens_min_ols_coef_potencial,Mínimo de sensibilidad: coeficiente OLS de condición Potencial,1.0454708525178034,años por año
+sens_max_ols_coef_potencial,Máximo de sensibilidad: coeficiente OLS de condición Potencial,1.1873755272563562,años por año
+pct_regla_fecha_discrepante,Discrepancia de regla de fecha,7.792207792207792,porcentaje
+mediana_deriva_anio4,Deriva mediana al cuarto año,3.0,años
+p90_deriva_anio4,Percentil 90 de deriva al cuarto año,5.0,años
+n_proyectos_anio4,Proyectos observados al cuarto año,45.0,proyectos
+ic_op_inf_4_base_probable,"Intervalo bootstrap ic_op_inf para incidente, BASE_PROBABLE, t=4",0.20936079545454547,proporción
+ic_op_sup_4_base_probable,"Intervalo bootstrap ic_op_sup para incidente, BASE_PROBABLE, t=4",0.5861556560672514,proporción
+ic_sal_inf_4_base_probable,"Intervalo bootstrap ic_sal_inf para incidente, BASE_PROBABLE, t=4",0.0,proporción
+ic_sal_sup_4_base_probable,"Intervalo bootstrap ic_sal_sup para incidente, BASE_PROBABLE, t=4",0.22863212719298245,proporción
+ic_op_inf_6_base_probable,"Intervalo bootstrap ic_op_inf para incidente, BASE_PROBABLE, t=6",0.5280915178571428,proporción
+ic_op_sup_6_base_probable,"Intervalo bootstrap ic_op_sup para incidente, BASE_PROBABLE, t=6",0.9209159226190476,proporción
+ic_sal_inf_6_base_probable,"Intervalo bootstrap ic_sal_inf para incidente, BASE_PROBABLE, t=6",0.0,proporción
+ic_sal_sup_6_base_probable,"Intervalo bootstrap ic_sal_sup para incidente, BASE_PROBABLE, t=6",0.22863212719298245,proporción
+ic_op_inf_4_posible_potencial,"Intervalo bootstrap ic_op_inf para incidente, POSIBLE_POTENCIAL, t=4",0.0,proporción
+ic_op_sup_4_posible_potencial,"Intervalo bootstrap ic_op_sup para incidente, POSIBLE_POTENCIAL, t=4",0.17414899553571425,proporción
+ic_sal_inf_4_posible_potencial,"Intervalo bootstrap ic_sal_inf para incidente, POSIBLE_POTENCIAL, t=4",0.0,proporción
+ic_sal_sup_4_posible_potencial,"Intervalo bootstrap ic_sal_sup para incidente, POSIBLE_POTENCIAL, t=4",0.24166666666666667,proporción
+ic_op_inf_6_posible_potencial,"Intervalo bootstrap ic_op_inf para incidente, POSIBLE_POTENCIAL, t=6",0.05272327769886364,proporción
+ic_op_sup_6_posible_potencial,"Intervalo bootstrap ic_op_sup para incidente, POSIBLE_POTENCIAL, t=6",0.45502267743221697,proporción
+ic_sal_inf_6_posible_potencial,"Intervalo bootstrap ic_sal_inf para incidente, POSIBLE_POTENCIAL, t=6",0.11197916666666667,proporción
+ic_sal_sup_6_posible_potencial,"Intervalo bootstrap ic_sal_sup para incidente, POSIBLE_POTENCIAL, t=6",0.5739192193675889,proporción
+n_cifras_verificadas,Cifras verificadas,111.0,cifras

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
+
 from .claims import build_claims_register
 from .conciliacion import (
     build_date_rule_check,
@@ -193,6 +195,12 @@ def main() -> None:
         sensibilidad=sensitivity,
         sensibilidad_publicable=publishable_sensitivity,
         regla_fecha=date_rule.detalle,
+        transcripcion_2022=pd.read_csv(
+            REFERENCE_DIR / "cartera_2022_transcrita.csv"
+        ),
+        cruce_manual=pd.read_csv(MANUAL_PATH),
+        validacion_datos=extended_data,
+        validacion_predicciones=successive_validation.predicciones,
     )
     verified_claims = verify_claims_register(
         claims,
@@ -205,6 +213,8 @@ def main() -> None:
         ajustes_path=REFERENCE_DIR / "ajustes_conciliacion.csv",
         sensibilidad_path=INTERIM_DIR / "sensibilidad_publicable.parquet",
         weak_panel_path=INTERIM_DIR / "panel_sin_vinculos_debiles.parquet",
+        transcripcion_2022_path=REFERENCE_DIR / "cartera_2022_transcrita.csv",
+        cruce_manual_path=MANUAL_PATH,
     )
     write_claims_register(verified_claims, INTERIM_DIR / "claims.json")
     require_verified(verified_claims)

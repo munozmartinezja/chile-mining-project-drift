@@ -10,7 +10,7 @@ from typing import Any
 
 import pandas as pd
 
-DISCLAIMER = "EXPLORATORIO — no publicable"
+DISCLAIMER = "Informe de diagnóstico del pipeline. Las cifras publicables están en docs/registro_cifras.csv."
 DECISIONES = [
     {"decision": "Se conserva evidencia literal y página para cada cifra declarada."},
     {"decision": "Los cruces dudosos se derivan a revisión manual sin reutilizar identidad."},

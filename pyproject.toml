@@ -1,7 +1,8 @@
 [project]
 name = "cpdrift"
 version = "0.1.0"
-description = "Add your description here"
+description = "Deriva de plazo, capex y desenlaces de la cartera de inversión minera de Cochilco, 2014–2025"
+license = "MIT"
 authors = [
     { name = "Jonathan Muñoz Martínez", email = "334393430+munozmartinezja@users.noreply.github.com" }
 ]
